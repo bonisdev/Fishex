@@ -388,7 +388,9 @@ function addTheSprings_orie( locationsOfTheseNewEntities, spacingss, totParticle
 
  
          
-    } 
+    }
+
+    return springsForThisEnt.length;
 }
 function addTheSprings_std( locationsOfTheseNewEntities, spacingss, unitforvoxelspacing, orientcontrolradius, 
     centerNucleausParticle, indOfTealParticle, allowspringtypes, totParticleIndTrackr, listOfOrienterParticles, listOfCollisionParticles ){
@@ -428,9 +430,10 @@ function addTheSprings_std( locationsOfTheseNewEntities, spacingss, unitforvoxel
 
 
     // ^^^ APPLY THESE
-
+    let meta_val_highest_spring_count = 0;
     
     for(let i = 0;i < locationsOfTheseNewEntities.length;i++){
+
         let springsForThisEnt = [];
         for(let j = 0;j < locationsOfTheseNewEntities.length;j++){
 
@@ -480,7 +483,9 @@ function addTheSprings_std( locationsOfTheseNewEntities, spacingss, unitforvoxel
         }// ^^^ going through all 'j' entities
 
 
-
+        if( springsForThisEnt.length > meta_val_highest_spring_count){
+            meta_val_highest_spring_count = springsForThisEnt.length;
+        }
 
 
 
@@ -633,6 +638,9 @@ function addTheSprings_std( locationsOfTheseNewEntities, spacingss, unitforvoxel
     //         console.log('11111112222222222')
     //     } 
     // }
+
+
+    console.log('HIGHEST SPRING COUNT FOR ONE PARTICLE: ', meta_val_highest_spring_count );
 
 
 }
@@ -888,17 +896,52 @@ function carpetParticleHelper_InactiveGold( xx, yy, zz, perim, spcin, listofnupa
 
 }
 
+function calculateSpiralCoordinates(index, radius) {
+    // The golden angle in radians (approximately 360° / ϕ^2)
+    const goldenAngle = 2.39996323;
 
-function carpetParticleHelper_Water( xx, yy, zz, perim, spcin, listofnuparts, totParticleIndTrackr ){
+    // Ensure index is treated as a number
+    const idx = Number(index);
+
+    // Calculate the angle and distance from the center
+    const angle = idx * goldenAngle;
+    const distance = radius * Math.sqrt(idx);
+
+    // Compute x and y coordinates
+    const x = Math.cos(angle) * distance;
+    const y = Math.sin(angle) * distance;
+
+    return { x, y };
+}
+
+function carpetParticleHelper_BottomMud( xx, yy, zz, thewidth, theheight, perim, listofnuparts, totParticleIndTrackr, randobj ){
+
+    let basebrown = [139,69,19];
+    let browns = [];
+    for(let h = 0;h < 56;h++){
+        browns.push([
+            basebrown[0] + Math.floor(randobj.random()*34) - 17,
+            basebrown[1] + Math.floor(randobj.random()*12) - 6,
+            basebrown[2] + Math.floor(randobj.random()*5) - 2,
+        ])
+    }
+
     // Reserve water
     let startofthis = 0 + totParticleIndTrackr.val;
 
+    let spcin = thewidth/perim;
+
+    let trakc = 0;
+
     for( let rx = 0;rx < perim;rx++){
         for( let ry = 0;ry < perim;ry++){
+            trakc++;
 
-            let xxx = rx*spcin;//Math.random() * 18;
+            let cor = calculateSpiralCoordinates( trakc, 0.06, )
+
+            let xxx =  cor.x;//rx*spcin - thewidth/2; 
             let yyy = 0;//5 + Math.random() * 2;
-            let zzz = ry*spcin;//Math.random() * 18;
+            let zzz = cor.y;//ry*spcin - theheight/2; 
 
             let nuPoint = createParticle( xx + xxx, yy + yyy, zz + zzz, totParticleIndTrackr.val );
 
@@ -918,9 +961,9 @@ function carpetParticleHelper_Water( xx, yy, zz, perim, spcin, listofnuparts, to
             nuPoint.sectionIndexOneDBEntry = 0;//nucleusParticleId;// meta3
             // ^ NOTHING in this case, not connected to any other thing
 
-            nuPoint.desiredR = 195;//meta4  these values are NOT reset 
-            nuPoint.desiredG = 195;//meta5
-            nuPoint.desiredB = 255;//meta6
+            nuPoint.desiredR = browns[trakc%browns.length][0];//195;//meta4  these values are NOT reset 
+            nuPoint.desiredG = browns[trakc%browns.length][1];//195;//meta5
+            nuPoint.desiredB = browns[trakc%browns.length][2];//255;//meta6
 
             // COunter timer (increments 1, every frame)
             nuPoint.meta7 = 0;

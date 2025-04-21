@@ -61,8 +61,8 @@ var SIM_META = {
 
 // Camera
 const camera = {
-    position: [0, 0, 15],
-    rotation: [0, 0],
+    position: [FINAL_POINT_DATA.BUCKET_SPACING*FINAL_POINT_DATA.bucketsPerimeter/2, 15, 2],
+    rotation: [0.44, Math.PI],
     speed: 0.28,
     sensitivity: 0.028,
 
@@ -276,8 +276,8 @@ async function resetDaWholeTing(){
         ALL_SFX = new Array(FINAL_POINT_DATA.TOTAL_SFXS).fill(0);
 
         // Reset camera and related global state.
-        camera.position = [0, 0, 15];
-        camera.rotation = [0, 0];
+        camera.position = [FINAL_POINT_DATA.BUCKET_SPACING*FINAL_POINT_DATA.bucketsPerimeter/2, 15, 2];
+        camera.rotation = [0.44, Math.PI];
         camera.target = [0, 0, 0];
         camera.useTarget = false;
         CURR_CAM_MODE = -1;
@@ -490,12 +490,18 @@ function updateCamera() {
             orbitModeSize += 2 * Math.sin((STEPCOUNT)/301*extraSlowDownTime);
 
             
-
+            // target = {
+            //     x: sideLength/2 + Math.sin((STEPCOUNT)/342*extraSlowDownTime) * orbitModeSize,
+            //     y: 9+Math.sin(STEPCOUNT/451*extraSlowDownTime)*2,
+            //     z: sideLength/2 + Math.cos(STEPCOUNT/342*extraSlowDownTime) * orbitModeSize,
+            // };
+ 
             target = {
-                x: sideLength/2 + Math.sin((STEPCOUNT)/342*extraSlowDownTime) * orbitModeSize,
-                y: 9+Math.sin(STEPCOUNT/451*extraSlowDownTime)*2,
-                z: sideLength/2 + Math.cos(STEPCOUNT/342*extraSlowDownTime) * orbitModeSize,
+                x: FINAL_POINT_DATA.BUCKET_SPACING*FINAL_POINT_DATA.bucketsPerimeter/2,
+                y: 15,
+                z: 2,
             };
+
             SPRING_REST_DISTANCE = 1;
             SPRING_CONSTANT = 120;
             DAMPING_FACTOR = 45;
@@ -1204,7 +1210,8 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     var dbStartInd: u32 = ${FINAL_POINT_DATA.START_DB}u;
 
     var totalBucketParticles: u32 = ${FINAL_POINT_DATA.allBucketParticles}u;
-    
+    var collisionFidelity: u32 = ${FINAL_POINT_DATA.collisionFidelity}u;// fidelity of collision nootices
+    var colfidoff: u32 = 0u;//<-changes a lot
     
     var maxgoodents: u32 = ${FINAL_POINT_DATA.currentgood}u;
     var maxbadents: u32 = ${FINAL_POINT_DATA.currentbad}u;
@@ -1262,6 +1269,9 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     var spawnSizeX: f32 = ${FINAL_POINT_DATA.SPAWN_SIZE_X}f;
     var spawnSizeY: f32 = ${FINAL_POINT_DATA.SPAWN_SIZE_Y}f;
 
+
+    var mudStart: u32 = ${FINAL_POINT_DATA.MUD_START}u;// for the mud that goes back to position
+    var mudSize: u32 = ${FINAL_POINT_DATA.MUD_SIZE}u;
     
 
 
@@ -1907,10 +1917,10 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
 
 
 
-
+                colfidoff = (step+tealind) % collisionFidelity;// collision fidelity offset
 
                 // DONUTMODIFT<- ThiS IS ONE of THREE instances looping through collisoin balls
-                var ee: u32 = 0u;
+                var ee: u32 = 0u + colfidoff;
                 loop {
                     if ee >= maxEntsToCheck { break; } // go through each bad entity
                         //                          WITH the objective that you want to get yor
@@ -1963,7 +1973,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
                         }
                     }
 
-                    ee = ee + 1u;
+                    ee = ee + collisionFidelity;
                 }
 
             }
@@ -2772,7 +2782,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
                     metaseven = da_counter_max;
                 }
                 
-                var colliding_with: f32 = 0f;// TODO : it's hard coded to collide w good entities rn rn
+                var colliding_with: f32 = 2f;//0f;// TODO : it's hard coded to collide w good entities rn rn
                 var entsToCountVal: u32 = 0u;
                 var entsWhereToStart: u32 = 0u;
                 
@@ -2793,8 +2803,10 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
                     entsWhereToStart = 0u;
                 }
 
+                colfidoff = (step+id) % collisionFidelity;// collision fidelity offset
+
                 // DONUTMODIFT<- ThiS IS TWO of THREE instances looping through collisoin balls
-                var qq: u32 = 0u;
+                var qq: u32 = 0u + colfidoff;
                 loop {
                     if qq >= entsToCountVal { break; } // go through each bad entity 
 
@@ -2863,8 +2875,8 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
                         // }
                     }
 
-                    qq = qq + 1u;
-                }   // End colliding with all GOod entities (player woned i guess)
+                    qq = qq + collisionFidelity;
+                }
 
 
 
@@ -2882,7 +2894,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
                 }
                 else if(y < functionalGround + (bucket_pacing*0.35f)){ // just at stasis i guess
                     //vy -= sgrav*0.1f;
-                    vy += 0.0008f + 0.00045f * sin( (x + f32(id) * 22) + sftep*0.001f + (y * 99) + ((f32(id)%55)-27f)*288 );
+                    vy += 0.0026f + 0.00065f * sin(  (x + f32(id) * 1227f) + sftep*0.00034f + (y * 299f) + ((f32(id)%55)-27f)*288f  );
                     
                     vx *= 0.98f;
                     vy *= 0.98f;
@@ -2898,6 +2910,12 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
                     vy -= sgrav;
                 }
 
+
+                // MUD? retract to spiral 
+                if( (id>=mudStart) && id<(mudStart+mudSize) ){
+                    var goodmud = calculate_spiral_coordinates( id-mudStart, 0.06f );
+                    
+                }
 
                 x += vx;
                 y += vy;
@@ -4100,9 +4118,9 @@ async function main() {
 
     depthTexture = createDepthTexture(device, canvas.width, canvas.height);
 
-    var FOG_R = 0.42;
-    var FOG_G = 0.42;
-    var FOG_B = 0.86;
+    var FOG_R = 0.28;
+    var FOG_G = 0.32;
+    var FOG_B = 0.89;
 
     const renderPassDesc = {
         colorAttachments: [
@@ -4360,8 +4378,8 @@ async function main() {
         cameraDataArray[33] = FOG_G;
         cameraDataArray[34] = FOG_B;
         cameraDataArray[35] = 1.0;
-        cameraDataArray[36] = 35.0;   // near
-        cameraDataArray[37] = 70.0;   // far
+        cameraDataArray[36] = 31.0;   // near
+        cameraDataArray[37] = 55.0;   // far
     
         if(device)
         device.queue.writeBuffer(vpBuffer, 0, cameraDataArray);

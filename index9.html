@@ -1,10 +1,207 @@
-<html>
-	<head>
-		<title>Fishex</title>
-	</head>
-	
-	<body>
-		<p>The premiere fish experience here soon! April 2025</p>
-	</body>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fishem</title>
+    <script src="sfx_base64.js"></script>
+    <script>
+        var siteToGetFrom = 6352;
 
+        console.log('sfxBase64')
+        console.log(Object.keys(sfxBase64));
+
+        function base64ToArrayBuffer(base64) {
+            const cleanBase64 = base64.includes(',') ? base64.split(',')[1] : base64;
+        
+            try {
+                const binaryString = atob(cleanBase64);
+                const len = binaryString.length;
+                const bytes = new Uint8Array(len);
+                for (let i = 0; i < len; i++) {
+                    bytes[i] = binaryString.charCodeAt(i);
+                }
+                return bytes.buffer;
+            } catch (error) {
+                console.error('Failed to decode Base64 string:', base64, error);
+                return null;
+            }
+        }
+        
+        // Initialize the audio context
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        
+        // Iterate through all keys in sfxBase64
+        Object.keys(sfxBase64).forEach((key) => {
+            const base64String = sfxBase64[key].base64;
+            const arrayBuffer = base64ToArrayBuffer(base64String);
+
+            if (arrayBuffer) {
+                audioContext.decodeAudioData(arrayBuffer, (decodedBuffer) => {
+                    // Store the decoded AudioBuffer
+                    sfxBase64[key].buffer = decodedBuffer;
+                    console.log(`AudioBuffer successfully decoded for ${key}`);
+                }, (error) => {
+                    console.error(`Error decoding audio data for ${key}:`, error);
+                });
+            } else {
+                console.error(`Failed to create ArrayBuffer for ${key}`);
+            }
+        });
+
+        // Accessing the data
+        console.log('sfxBase64 object populated with audio buffers:', sfxBase64);
+
+        var canplayAudio = false; // Global variable
+  
+
+        function unlockAudioContext() {
+            if( canplayAudio === false){
+                
+                //requestHIDAccess();
+            }
+            canplayAudio = true; // Update global variable
+            
+            // if (audioContext.state === 'suspended') {
+            //     audioContext.resume().then(() => {
+            //         console.log('AudioContext resumed');
+            //     }).catch((error) => {
+            //         console.error('Failed to resume AudioContext:', error);
+            //     });
+            // }
+        }
+
+        
+        // Example: Playing an audio file
+        // Example: Playing an audio file with random pitch
+        function playAudio(key) {
+            if (sfxBase64[key]?.buffer instanceof AudioBuffer) {
+                const source = audioContext.createBufferSource();
+                source.buffer = sfxBase64[key].buffer;
+                
+                // Randomly adjust pitch by setting playbackRate between 0.5 (lower) and 1.5 (higher)
+                let randomPitch = 0.5 + Math.random() * 1.0; // Range: 0.5 to 1.5
+                //randomPitch *= 0.2;
+                source.playbackRate.value = randomPitch;
+                
+                source.connect(audioContext.destination);
+                source.start(0);
+            } else {
+                console.error(`AudioBuffer for ${key} is not available or invalid.`);
+            }
+        }
+
+    </script>
+    <script src="src/EZWG.js" ></script>
+    <script src="backgrounds.js" ></script>
+    <script>
+        // Create an image object
+        // const img = new Image();
+        // img.src = smolcaveBase64; // Use the variable from imageData.js
+
+        // // When the image loads, draw it on the canvas
+        // img.onload = () => {
+        //     const canvas = document.getElementById('myCanvas');
+        //     const ctx = canvas.getContext('2d');
+        //     ctx.drawImage(img, 0, 0);
+
+        //     // Test getImageData to confirm no tainting
+        //     try {
+        //         const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        //         console.log("Image data loaded successfully:", imageData);
+        //     } catch (e) {
+        //         console.error("Error with getImageData:", e);
+        //     }
+        // };
+
+        // img.onerror = () => {
+        //     console.error("Failed to load image from Base64 string");
+        // };
+
+
+
+        // const img = new Image();
+        // img.id = "bgText1"; // Match the expected ID
+        // img.src = bgsmolcave;
+        // document.body.appendChild(img); // Add to DOM if needed
+        // img.classList.add("hidden"); // Match your original class
+        // console.log('ok');
+        // main()
+    </script>
+
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+        }
+        canvas {
+            display: block;
+        }
+        
+        /* Add HUD styling */
+        #hud {
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 10; /* Ensures it stays above canvas */
+            padding: 10px;
+            color: white; /* Or whatever color you prefer */
+            /* Optional: Add background for better visibility */
+            background: rgba(0, 0, 0, 0.5);
+           /* pointer-events: none;  Allows clicks to pass through to canvas */
+        }
+        
+        .hidden{
+            transition: all 1s ease-in-out !important;
+            opacity:0;
+            max-height:0;
+            max-width:0;
+            display:none;
+            padding:0 !important;
+            margin:0 !important;
+            border:none !important;
+            overflow:hidden;
+        }
+        .disable-selectt {
+            user-select: none; /* supported by Chrome and Opera */
+            -webkit-user-select: none; /* Safari */
+            -khtml-user-select: none; /* Konqueror HTML */
+            -moz-user-select: none; /* Firefox */
+            -ms-user-select: none; /* Internet Explorer/Edge */
+            -webkit-user-drag: none;
+        }
+        .pixel-perfect {
+            image-rendering: pixelated;
+            image-rendering: crisp-edges; /* for some browsers */
+            width: 8px;  /* or the actual width of your image */
+            height: 8px; /* or the actual height of your image */
+        }
+    </style>
+</head>
+<body>
+    <!-- Add HUD div before canvas -->
+    <div id="hud">
+        <!-- HUD content goes here -->
+        <span id="scorePointsDisplay"></span>
+        <br>
+        <span id="distFromCenterDisplay"></span>
+        <br>
+        <span id="velOfCentralGuy"></span>
+        <br>
+        <span id="camModeDisplay"></span>
+        <br>
+        <button onclick="resetDaWholeTing()">cldf</button>
+
+        <h1> press 'm' to enabled WASD mode</h1>
+    </div>
+    
+    <!-- <img id="bgText1" class="hidden" src="smolcave.png"> -->
+    
+    <canvas id="gpuCanvas"></canvas>
+    <script src="scenario_helper.js" ></script>
+    <script src="voxel_entities_compiled.js" ></script>
+    <script src="scenario_setup.js" ></script>
+    <script src="basic_particle_compiled.js" ></script>
+
+</body>
 </html>
