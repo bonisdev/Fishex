@@ -4,7 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Fishem</title>
+    <script src="math_raycastin.js"></script>
+    <script src="icons.js"></script>
     <script src="sfx_base64.js"></script>
+    <!-- <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script> -->
+    <script src="localsocektio.js"></script>
+    <script src="serverapi.js"></script>
+    <script src="gamemaker.js"></script>
     <script>
         var siteToGetFrom = 6352;
 
@@ -80,7 +86,7 @@
                 source.buffer = sfxBase64[key].buffer;
                 
                 // Randomly adjust pitch by setting playbackRate between 0.5 (lower) and 1.5 (higher)
-                let randomPitch = 0.5 + Math.random() * 1.0; // Range: 0.5 to 1.5
+                let randomPitch = 0.8 + Math.random() * 0.4; // Range: 0.5 to 1.5
                 //randomPitch *= 0.2;
                 source.playbackRate.value = randomPitch;
                 
@@ -93,46 +99,15 @@
 
     </script>
     <script src="src/EZWG.js" ></script>
-    <script src="backgrounds.js" ></script>
-    <script>
-        // Create an image object
-        // const img = new Image();
-        // img.src = smolcaveBase64; // Use the variable from imageData.js
-
-        // // When the image loads, draw it on the canvas
-        // img.onload = () => {
-        //     const canvas = document.getElementById('myCanvas');
-        //     const ctx = canvas.getContext('2d');
-        //     ctx.drawImage(img, 0, 0);
-
-        //     // Test getImageData to confirm no tainting
-        //     try {
-        //         const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        //         console.log("Image data loaded successfully:", imageData);
-        //     } catch (e) {
-        //         console.error("Error with getImageData:", e);
-        //     }
-        // };
-
-        // img.onerror = () => {
-        //     console.error("Failed to load image from Base64 string");
-        // };
-
-
-
-        // const img = new Image();
-        // img.id = "bgText1"; // Match the expected ID
-        // img.src = bgsmolcave;
-        // document.body.appendChild(img); // Add to DOM if needed
-        // img.classList.add("hidden"); // Match your original class
-        // console.log('ok');
-        // main()
-    </script>
+    <script src="backgrounds.js" ></script> 
 
     <style>
         body {
             margin: 0;
-            overflow: hidden;
+            overflow: hidden; 
+            
+            
+            font-family: Arial, sans-serif;
         }
         canvas {
             display: block;
@@ -176,32 +151,829 @@
             width: 8px;  /* or the actual width of your image */
             height: 8px; /* or the actual height of your image */
         }
+
+
+        
+        /* Carousel container */
+        #carouselContainer {
+            position: absolute;
+            top: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 400px;
+            height: 150px;
+            perspective: 1000px;
+            pointer-events: none;
+        }
+
+        /* Each carousel item */
+        .carouselItem {
+            position: absolute;
+            top: 0;
+            left: 50%;
+            width: 100px;
+            height: 100px;
+            transition: all 0.6s ease;
+            transform-style: preserve-3d;
+            opacity: 0.5;
+        }
+
+        /* Center item (highlighted) */
+        .position0 {
+            transform: translateX(-50%) translateZ(150px) scale(1.2);
+            opacity: 1;
+            z-index: 3;
+        }
+
+        /* Left item */
+        .position1 {
+            transform: translateX(-150%) translateZ(0px) scale(0.8);
+            opacity: 0.6;
+            z-index: 2;
+        }
+
+        /* Right item */
+        .position2 {
+            transform: translateX(50%) translateZ(0px) scale(0.8);
+            opacity: 0.6;
+            z-index: 2;
+        }
+
+        /* Image inside */
+        .carouselItem img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            border-radius: 10px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+            background-color: white;
+        }
+
+
+
+        /* Centered Overlay (Original) */
+        .overlay-centered {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 70%;
+            min-height: 30vh;
+            background: rgba(0, 0, 0, 0.3);
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+            z-index: 1000;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            align-items: center;
+            user-select: none;
+        }
+
+        .title {
+            font-size: 4.5em;
+            margin: 0;
+        }
+
+        .subtitle {
+            font-size: 1.2em;
+            margin: 10px 0 20px;
+            opacity: 0.8;
+        }
+
+        .experience-btn, .single-player-btn, .multiplayer-btn {
+            background: #1e90ff;
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 5px;
+            font-size: 1.1em;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+            margin: 10px;
+        }
+
+        .experience-btn:hover, .single-player-btn:hover, .multiplayer-btn:hover {
+            background: #1c86ee;
+            transform: translateY(-2px);
+            box-shadow: 0 6px 12px rgba(0, 0, 0, 0.4);
+        }
+
+        .experience-btn:active, .single-player-btn:active, .multiplayer-btn:active {
+            transform: translateY(1px);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+            background: yellow;
+            color: blue;
+        }
+
+        /* Grid Styles */
+        .grid-container {
+            display: none; /* Hidden initially */
+            grid-template-columns: repeat(4, 1fr);
+            gap: 10px;
+            width: 100%;
+            max-width: 660px; /* 4 * (150px + 10px gap) */
+            margin-bottom: 20px;
+            position: relative; /* For positioning stats popup */
+        }
+
+        .grid-cell {
+            width: 150px;
+            height: 150px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 5px;
+            overflow: hidden;
+            position: relative;
+            cursor: pointer;
+            border: 2px solid transparent;
+            transition: border 0.2s ease;
+        }
+
+        .grid-cell img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .grid-cell:hover {
+            border: 2px solid #1e90ff;
+        }
+
+        .grid-cell.selected {
+            border: 3px solid yellow;
+        }
+
+		.disabled-grid-cell{
+			opacity: 0.5;
+		}
+        .disabled-grid-cell:hover {
+            border: 2px solid #510000;
+        }
+		.disabled-grid-cell.selected {
+            border: 3px solid rgb(204, 0, 0);
+        }
+
+        /* Statistics Popup */
+        .stats-popup, .stats-popup-hover {
+            position: absolute;
+            background: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 10px;
+            border-radius: 5px;
+            z-index: 1001;
+            font-size: 1.2em; /* Increased font size */
+            text-align: left;
+            max-width: 300px; /* Increased width to prevent wrapping */
+        }
+
+        .stats-popup {
+            top: -150px;
+            border: 3px solid yellow; /* Match selected cell outline */
+            left: 50%;
+            transform: translateX(-50%);
+        }
+
+        .stats-popup-hover {
+            border: 2px solid #1e90ff; /* Match hover cell outline */
+            display: none; /* Hidden unless hovering */
+        }
+
+        .stats-row {
+            display: grid;
+            grid-template-columns: 150px 100px; /* Fixed widths to prevent wrapping */
+            gap: 10px;
+            margin: 5px 0;
+            white-space: nowrap; /* Prevent text wrapping */
+        }
+
+        .stats-label {
+            text-align: left;
+        }
+
+        .stats-value {
+            text-align: right;
+        }
+
+        /* Bottom Left Overlay (Seed) */
+        .overlay-bottom-left {
+            position: fixed;
+            bottom: 20px;
+            left: 20px;
+            max-width: 200px;
+            /* height: 40px; */
+            background: rgba(0, 0, 0, 0.3);
+            color: white;
+            padding: 10px;
+            border-radius: 10px;
+            text-align: left;/*center;*/
+            z-index: 1000;
+            user-select: text;
+            /* display: flex; */
+            align-items: left;/*center;*/
+            justify-content: left;/*center;*/
+        }
+
+        .seed-text {
+            font-size: 1.2em;
+            margin: 0;
+            opacity: 0.8;
+        }
+
+        /* Top Left Overlay (Ping) */
+        .overlay-top-left {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            width: 200px;
+            height: 40px;
+            background: rgba(0, 0, 0, 0.3);
+            color: white;
+            padding: 10px;
+            border-radius: 10px;
+            text-align: left;
+            z-index: 1000;
+            user-select: text;
+            display: flex;
+            align-items: center;
+            justify-content: flex-start;
+        }
+
+        .ping-text {
+            font-size: 1.2em;
+            margin: 0;
+            opacity: 0.8;
+        }
+
+        /* Top Right Overlay (Username) */
+        .overlay-top-right {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            width: 200px;
+            background: rgba(0, 0, 0, 0.3);
+            color: white;
+            padding: 10px;
+            border-radius: 10px;
+            text-align: center;
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .username {
+            font-size: 1.2em;
+            margin: 0;
+            opacity: 0.8;
+        }
+
+        .profile-img {
+            width: 30px;
+            height: 30px;
+            background: #ccc;
+            border-radius: 50%;
+        }
+
+        /* Dropdown for Twitter Handle */
+        .dropdown {
+            position: absolute;
+            top: 100%;
+            right: 0;
+            width: 220px;
+            background: rgba(0, 0, 0, 0.5);
+            padding: 20px;
+            border-radius: 10px;
+            display: none;
+            z-index: 1001;
+        }
+
+        .dropdown.active {
+            display: block;
+        }
+
+        .dropdown-label {
+            font-size: 1.2em;
+            opacity: 0.8;
+            margin: 0 0 10px;
+            text-align: center;
+        }
+
+        .dropdown input {
+            width: calc(100% - 16px);
+            padding: 8px;
+            margin: 5px 0;
+            border: none;
+            border-radius: 5px;
+            background: rgba(255, 255, 255, 0.9);
+            color: black;
+        }
+
+        .dropdown button {
+            width: 100%;
+            padding: 12px 24px;
+            margin-top: 10px;
+            background: #1e90ff;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            font-size: 1.1em;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+        }
+
+        .dropdown button:hover {
+            background: #1c86ee;
+            transform: translateY(-2px);
+            box-shadow: 0 6px 12px rgba(0, 0, 0, 0.4);
+        }
+
+        .dropdown button:active {
+            transform: translateY(1px);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+            background: yellow;
+            color: blue;
+        }
+
+        /* Bottom Right Overlay (Leaderboards) */
+        .overlay-bottom-right {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            width: 300px;
+            background: rgba(0, 0, 0, 0.3);
+            color: white;
+            padding: 15px;
+            border-radius: 10px;
+            z-index: 1000;
+            user-select: none;
+        }
+
+        .leaderboard-title {
+            font-size: 1.2em;
+            margin: 0 0 10px;
+            opacity: 0.8;
+            text-align: center;
+        }
+
+        .leaderboard-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 8px;
+        }
+
+        .leaderboard-user {
+            display: flex;
+            align-items: center;
+        }
+
+        .leaderboard-profile-img {
+            width: 20px;
+            height: 20px;
+            background: #ccc;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+
+        .leaderboard-username {
+            font-size: 1em;
+            opacity: 0.8;
+        }
+
+        .leaderboard-ratio {
+            font-size: 1em;
+            opacity: 0.8;
+        }
+
     </style>
 </head>
 <body>
-    <!-- Add HUD div before canvas -->
+    <!-- HUD -->
     <div id="hud">
-        <!-- HUD content goes here -->
-        <span id="scorePointsDisplay"></span>
-        <br>
-        <span id="distFromCenterDisplay"></span>
-        <br>
-        <span id="velOfCentralGuy"></span>
-        <br>
-        <span id="camModeDisplay"></span>
-        <br>
-        <button onclick="resetDaWholeTing()">cldf</button>
-
-        <h1> press 'm' to enabled WASD mode</h1>
+        
     </div>
-    
-    <!-- <img id="bgText1" class="hidden" src="smolcave.png"> -->
-    
-    <canvas id="gpuCanvas"></canvas>
-    <script src="scenario_helper.js" ></script>
-    <script src="voxel_entities_compiled.js" ></script>
-    <script src="scenario_setup.js" ></script>
-    <script src="basic_particle_compiled.js" ></script>
 
+    <!-- Centered Overlay (Original) -->
+    <div class="overlay-centered" id="maintitlecardarea">
+        <div>
+            <h1 class="title">Fishex</h1>
+            <p class="subtitle">The Premiere Fish Experience</p>
+            <div class="grid-container" id="gridContainer">
+                <div class="grid-cell" data-index="0">
+                    <img id="starterImg0" alt="Starter 1">
+                </div>
+                <div class="grid-cell" data-index="1">
+                    <img id="starterImg1" alt="Starter 2">
+                </div>
+                <div class="grid-cell" data-index="2">
+                    <img id="starterImg2" alt="Starter 3">
+                </div>
+                <div class="grid-cell disabled-grid-cell hidden" data-index="3">
+                    <img id="starterImg3" alt="Starter 4">
+                </div>
+                <div class="grid-cell disabled-grid-cell hidden" data-index="4">
+                    <img id="starterImg4" alt="Starter 5">
+                </div>
+                <div class="grid-cell disabled-grid-cell hidden" data-index="5">
+                    <img id="starterImg5" alt="Starter 6">
+                </div>
+                <div class="grid-cell disabled-grid-cell hidden" data-index="6">
+                    <img id="starterImg6" alt="Starter 7">
+                </div>
+                <div class="grid-cell disabled-grid-cell hidden" data-index="7">
+                    <img id="starterImg7" alt="Starter 8">
+                </div>
+                <div class="stats-popup-hover" id="hoverStats0"></div>
+                <div class="stats-popup-hover" id="hoverStats1"></div>
+                <div class="stats-popup-hover" id="hoverStats2"></div>
+                <div class="stats-popup-hover hidden" id="hoverStats3"></div>
+                <div class="stats-popup-hover hidden" id="hoverStats4"></div>
+                <div class="stats-popup-hover hidden" id="hoverStats5"></div>
+                <div class="stats-popup-hover hidden" id="hoverStats6"></div>
+                <div class="stats-popup-hover hidden" id="hoverStats7"></div>
+                <div class="stats-popup" id="selectedStats" style="display: none;"></div>
+            </div>
+        </div>
+        <div id="buttonContainer">
+            <button tabindex="-1" class="experience-btn" onclick="showGrid()">Experience</button>
+        </div>
+    </div>
+
+    <!-- Bottom Left Overlay (Seed) -->
+    <div class="overlay-bottom-left">
+        <p id="seedindicator" class="seed-text hidden">Seed: 1234567890</p>
+        <p>WASD, Shift + Space to move</p>
+		<p>Left Click: select</p>
+		<p>Right Click and Drag: move camera</p>
+		<p>Scroll: zoom</p>
+		<p>E: fire missile on selected target</p>
+		<p>P: pause (hold)</p>
+		<p>O: debug toggle</p>
+		<p>Arrow Keys: camera</p>
+		<p>Enter: switch cam mode</p>
+
+    </div>
+
+    <!-- Top Left Overlay (Ping) -->
+    <div class="overlay-top-left hidden" id="pingareadisplayer">
+
+        <span id="scorePointsDisplay"></span><br>
+        <span id="distFromCenterDisplay"></span><br>
+        <span id="velOfCentralGuy"></span><br>
+        <span id="camModeDisplay"></span><br>
+
+        <div id="fishToolIndicator">
+            <span style="color:red;">Fish Lasso</span> 
+            <br>
+            <span>Fish Missile</span>
+            <br>
+            <span>Fish Laser</span>
+        </div>
+
+        <button id="resetbutton" tabindex="-1" onclick="hardresetter()"> R E S E T </button> 
+
+        <p class="ping-text" id="acutalopinlocation">Ping: _ _ _ms</p>
+    </div>
+
+    <!-- Top Right Overlay (Username with Dropdown) -->
+    <div class="overlay-top-right hidden" onclick="toggleDropdown(event)">
+        <p class="username hidden" id="usernameDisplay">@Anonymous</p>
+        <div class="profile-img"></div>
+        <div class="dropdown" id="loginDropdown" onclick="stopPropagation(event)">
+            <p class="dropdown-label">Represent your Twitter handle!</p>
+            <input type="text" placeholder="@urXhandle" id="handleInput" onkeydown="if(event.key === 'Enter') setHandle()">
+            <button onclick="setHandle()">Set</button>
+        </div>
+    </div>
+
+    <!-- Bottom Right Overlay (Leaderboards) -->
+    <div class="overlay-bottom-right hidden" id="leeaderboardoverlay">
+        <p class="leaderboard-title">Highest Rated</p>
+        <div class="leaderboard-row">
+            <div class="leaderboard-user">
+                <div class="leaderboard-profile-img"></div>
+                <span class="leaderboard-username">Player1</span>
+            </div>
+            <span class="leaderboard-ratio">10/2</span>
+        </div>
+        <div class="leaderboard-row">
+            <div class="leaderboard-user">
+                <div class="leaderboard-profile-img"></div>
+                <span class="leaderboard-username">Player2</span>
+            </div>
+            <span class="leaderboard-ratio">8/3</span>
+        </div>
+        <div class="leaderboard-row">
+            <div class="leaderboard-user">
+                <div class="leaderboard-profile-img"></div>
+                <span class="leaderboard-username">Player3</span>
+            </div>
+            <span class="leaderboard-ratio">7/4</span>
+        </div>
+        <div class="leaderboard-row">
+            <div class="leaderboard-user">
+                <div class="leaderboard-profile-img"></div>
+                <span class="leaderboard-username">Player4</span>
+            </div>
+            <span class="leaderboard-ratio">6/5</span>
+        </div>
+        <div class="leaderboard-row">
+            <div class="leaderboard-user">
+                <div class="leaderboard-profile-img"></div>
+                <span class="leaderboard-username">Player5</span>
+            </div>
+            <span class="leaderboard-ratio">5/6</span>
+        </div>
+    </div>
+
+    <!-- Carousel -->
+    <!-- <div id="carouselContainer">
+        <div class="carouselItem" id="carouselItem0">
+            <img src="" id="carouselImg0">
+        </div>
+        <div class="carouselItem" id="carouselItem1">
+            <img src="" id="carouselImg1">
+        </div>
+        <div class="carouselItem" id="carouselItem2">
+            <img src="" id="carouselImg2">
+        </div>
+    </div> -->
+ 
+
+    <!-- Canvas -->
+    <canvas id="gpuCanvas" oncontextmenu="return false;"></canvas>
+
+
+    <script>
+        var currentUsername = "anonymous"; // Store username without @
+
+        var generatedSeed = ":"+Math.random() +":"+ Date.now();
+        EZWG.SHA1.seed(generatedSeed);
+        EZWG.SHA1.random();
+        generatedSeed = EZWG.SHA1.state.lastseed;
+
+        document.getElementById('seedindicator').innerHTML = generatedSeed;
+
+        let selectedCell = null;
+        let hoveredCellIndex = null;
+
+        function experienceFunction() {
+            console.log("Experience button clicked!");
+            // Add your custom functionality here
+        }
+
+        function toggleDropdown(event) {
+            event.stopPropagation();
+            const dropdown = document.getElementById('loginDropdown');
+            dropdown.classList.toggle('active');
+        }
+
+        function stopPropagation(event) {
+            event.stopPropagation();
+        }
+
+        function setHandle() {
+            const handleInput = document.getElementById('handleInput').value.trim();
+            if (handleInput) {
+                const username = handleInput.startsWith('@') ? handleInput.slice(1) : handleInput;
+                currentUsername = username;
+                document.getElementById('usernameDisplay').textContent = '@' + username;
+                console.log(`Username set to: ${currentUsername}`);
+                document.getElementById('loginDropdown').classList.remove('active');
+            }
+        }
+
+        function renderStats(stats, isSelected = false, compareIndex = null) {
+            return stats.map((stat, i) => {
+                let valueColor = 'white';
+                if (compareIndex !== null && typeof stat.value === 'number') {
+                    const compareStat = starterStats[compareIndex][i].value;
+                    if (isSelected) {
+                        // Selected cell: green if larger, red if smaller
+                        if (stat.value > compareStat) {
+                            valueColor = '#00ff00'; // Green for larger
+                        } else if (stat.value < compareStat) {
+                            valueColor = '#ff0000'; // Red for smaller
+                        }
+                    } else {
+                        // Hovered cell: green if larger, red if smaller
+                        if (stat.value > compareStat) {
+                            valueColor = '#00ff00'; // Green for larger
+                        } else if (stat.value < compareStat) {
+                            valueColor = '#ff0000'; // Red for smaller
+                        }
+                    }
+                }
+                return `
+                    <div class="stats-row">
+                        <span class="stats-label">${stat.Label}</span>
+                        <span class="stats-value" style="color: ${valueColor}">${stat.value}</span>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function showGrid() {
+            const gridContainer = document.getElementById('gridContainer');
+            const buttonContainer = document.getElementById('buttonContainer');
+            gridContainer.style.display = 'grid';
+            buttonContainer.innerHTML = `
+                <button id="snglplayerbuton" tabindex="-1" class="single-player-btn" onclick="singlePlayer()">Launch!</button>
+                <!--<button id="multiplyerbuton" tabindex="-1" disabled class="multiplayer-btn" onclick="multiplayer()">Waterbox</button>-->
+            `;
+
+            // Set image sources dynamically
+            const imageSources = [
+                iconstrings.starter1,
+                iconstrings.starter2,
+                iconstrings.starter3,
+                iconstrings.starter4,
+                iconstrings.starter5,
+                iconstrings.starter6,
+                iconstrings.starter7,
+                iconstrings.starter8
+            ];
+
+            imageSources.forEach((src, index) => {
+                const imgElement = document.getElementById(`starterImg${index}`);
+                imgElement.src = src;
+            });
+
+            // Initialize stats popups
+            document.querySelectorAll('.grid-cell').forEach(cell => {
+                const index = cell.dataset.index;
+                const hoverStats = document.getElementById(`hoverStats${index}`);
+
+                cell.addEventListener('mouseenter', () => {
+                    if (!cell.classList.contains('selected')) {
+                        hoveredCellIndex = index;
+                        const compareIndex = selectedCell ? selectedCell.dataset.index : null;
+                        hoverStats.innerHTML = renderStats(starterStats[index], false, compareIndex);
+                        const selectedStats = document.getElementById('selectedStats');
+                        if (selectedStats.style.display === 'block' && selectedCell) {
+                            // Position hover stats to the right of the selected stats popup
+                            const selectedRect = selectedStats.getBoundingClientRect();
+                            const containerRect = gridContainer.getBoundingClientRect();
+                            hoverStats.style.left = `${selectedRect.left - containerRect.left + selectedRect.width + 10}px`; // Right of selected stats + 10px gap
+                            hoverStats.style.top = `${selectedRect.top - containerRect.top}px`; // Same vertical position
+                            // Update selected stats with comparison
+                            const selectedStatsContent = renderStats(starterStats[selectedCell.dataset.index], true, index);
+                            selectedStats.innerHTML = selectedStatsContent;
+                        } else {
+                            // Fallback: position above the hovered cell
+                            const rect = cell.getBoundingClientRect();
+                            const containerRect = gridContainer.getBoundingClientRect();
+                            hoverStats.style.left = `${rect.left - containerRect.left + rect.width / 2}px`;
+                            hoverStats.style.top = `${rect.top - containerRect.top - 150}px`;
+                            hoverStats.style.transform = 'translateX(-50%)';
+                        }
+                        hoverStats.style.display = 'block';
+                    }
+                });
+
+                cell.addEventListener('mouseleave', () => {
+                    if (!cell.classList.contains('selected')) {
+                        hoveredCellIndex = null;
+                        hoverStats.style.display = 'none';
+                        hoverStats.style.transform = ''; // Reset transform
+                        // Reset selected stats colors if a cell was selected
+                        if (selectedCell) {
+                            const selectedStats = document.getElementById('selectedStats');
+                            selectedStats.innerHTML = renderStats(starterStats[selectedCell.dataset.index]);
+                        }
+                    }
+                });
+
+                cell.addEventListener('click', () => {
+                    if (selectedCell) {
+                        selectedCell.classList.remove('selected');
+                        document.getElementById(`hoverStats${selectedCell.dataset.index}`).style.display = 'none';
+                    }
+                    cell.classList.add('selected');
+                    selectedCell = cell;
+                    const selectedStats = document.getElementById('selectedStats');
+                    selectedStats.innerHTML = renderStats(starterStats[index], true, hoveredCellIndex);
+                    selectedStats.style.display = 'block';
+                    hoverStats.style.display = 'none';
+                });
+            });
+        }
+
+        function singlePlayer() {
+            if(selectedCell){
+                let vl = selectedCell.getAttribute('data-index');
+                vl = Number(vl);
+                console.log(vl);
+
+                //let vl = 0;
+
+                document.getElementById('leeaderboardoverlay').classList.add('hidden');
+                document.getElementById('maintitlecardarea').classList.add('hidden');
+                document.getElementById('pingareadisplayer').classList.add('hidden');
+
+                resetGameMetaToo();
+
+                // if( vl === 2 || vl === 3 || vl === 4 || vl === 5 || vl === 6 || vl === 7 ){
+                //     vl = 0;
+                // }
+                
+
+                // Taxim
+                if( vl === 0){ 
+                    resetDaWholeTing( { type: "soloarcade", starting: Number(vl), 
+                        seed: ''+generatedSeed, 
+                        fog_r: 0.29, fog_g: 0.39, fog_b: 0.85, 
+                        ground_img_el_id: "bgText3" } );        // more roads higher contrast back
+                }
+                // Worm
+                else if( vl === 1 ){
+                    
+                    resetDaWholeTing( { type: "soloarcade", starting: Number(vl), 
+                        seed: ''+generatedSeed, 
+                        fog_r: 0.19, fog_g: 0.29, fog_b: 0.55, 
+                        ground_img_el_id: "bgText1" } );        // less roads more crap
+                }
+                // Scalpel
+                else if( vl === 2 ){
+                    
+                    resetDaWholeTing( { type: "soloarcade", starting: Number(vl), 
+                        seed: ''+generatedSeed, 
+                        fog_r: 0.478, fog_g: 0.835, fog_b: 0.937, 
+                        ground_img_el_id: "bgText4" } );        // forest ground
+                }
+                else{
+                    resetDaWholeTing();
+                }
+
+
+                // This is important for writing the shader as well
+
+
+            }
+            console.log("Single Player clicked!" );
+            // Add your single-player functionality here
+
+            //document.getElementById('snglplayerbuton').
+
+        }
+
+        function hardresetter(){
+            resetDaWholeTing();
+        }
+
+        function multiplayer() {
+            console.log("Multiplayer (4 online) clicked!");
+            // Add your multiplayer functionality here
+        }
+
+        function resetCarousel(){
+            document.getElementById('carouselItem0').className = 'carouselItem';
+            document.getElementById('carouselItem1').className = 'carouselItem';
+            document.getElementById('carouselItem2').className = 'carouselItem';
+        }
+        var base64stringsForIcons = [
+            iconstrings.fish,
+            iconstrings.missile,
+            iconstrings.nanolaser,
+        ];
+
+        // Initialize carousel images
+        // document.getElementById('carouselImg0').src = base64stringsForIcons[2];
+        // document.getElementById('carouselImg1').src = base64stringsForIcons[0];
+        // document.getElementById('carouselImg2').src = base64stringsForIcons[1];
+
+        // Carousel logic 
+        function cycleCarousel() {
+            CURR_TOOL_SELECTED = (CURR_TOOL_SELECTED + 1) % 3;
+
+            for (let i = 0; i < 3; i++) {
+                const item = document.getElementById('carouselItem' + i);
+                const relativeIndex = (i - CURR_TOOL_SELECTED + 3) % 3;
+                item.className = 'carouselItem position' + relativeIndex;
+            }
+        }
+
+        //cycleCarousel();
+        setTimeout(() => {
+            //testPint();
+        }, 2500);
+
+
+        // Optional: auto-cycle every few seconds
+        //setInterval(cycleCarousel, 3000);
+    </script>
+ 
+    <!-- Scripts -->
+    <script src="scenario_helper.js"></script>
+    <script src="voxel_entities_compiled.js"></script>
+    <script src="scenario_setup.js"></script>
+    <script src="basic_particle_compiled.js"></script>
 </body>
+
 </html>

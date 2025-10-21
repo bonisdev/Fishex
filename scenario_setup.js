@@ -17,6 +17,7 @@ function initNewEntityDictionary(){
         MAX_DBS:                10_000,     // how many random misc values u need stored 
         MAX_SPRINGS:            6_500_000,
         STD_GRAV:               0.00061,
+        STD_BUBL:               -0.00012,    // float upwards
 
         MUSIC_SLOTS:            16,     // one of these is a sfx that can play once per frame
         MUSIC_SLT_SIZE:         1,      // ping/pong
@@ -37,10 +38,11 @@ function initNewEntityDictionary(){
                                 16,   // dormant gold
                                 17,   // active gold
                                 18,  // marker decoration particles (used for targeting reticles, text, non-physics indication markers)
-                                19,  // explosion 1 weapon
-                                20 ],// laser 1 weapon
+                                19],  // explosion 1 weapon
+                                //20 ],  NOT ALLOWED SPRINGS, the spr id  slot is used for if its armed or not // laser 1 weapon
 
                                 //21], // ehh probs not necessary for the air drifert particle
+                                //22], // also probns not necessary for the bubble collection
         
         // Important for special physics on particles i guess
         particleSpecialPhysics: [ 14, // dormant particle
@@ -48,50 +50,73 @@ function initNewEntityDictionary(){
                                 15,   // water particle
                                 16,   // dormant gold
                                 17,   // active gold
-                                18, // marker decoration particles (used for targeting reticles, text, non-physics indication markers)
+                                18, // decoration imprints used as like temprary model hodlers for stuff
                                 19, //explosion 1
                                 20,// laser 1 weapon
 
-                                21 ],// air drifter particle decoration usually to t19, and t20 weapons
+                                21 ,// air drifter particle decoration usually to t19, and t20 weapons
+                                22 ],// bubbles that drift upwards
 
         consideredWeapons:      [ 19, // explosion 1 weapon
                                 20 ],//laser 1 weapon
 
         inOrderEnts:                [],
 
-        thebucketsidk:              null,
-        thegroundparts:             null,
-        instance_mega_cube_1:       null,
-        instance_mega_cube_2:       null,
+        // thebucketsidk:              null,
+        // thegroundparts:             null,
+        // instance_mega_cube_1:       null,
+        // instance_mega_cube_2:       null,
 
-        instance_urfish:            null,
+        // instance_urfish:            null,
 
-        instance_beachball1:        null,
+        // instance_beachball1:        null,
 
-        instance_plecko1:           null,
+        // instance_plecko1:           null,
 
-        instance_playfulfish1:      null,
-        instance_playfulfish2:      null,
+        // instance_playfulfish1:      null,
+        // instance_playfulfish2:      null,
+
+        SPECIAL_COLOUR_INSTRUCTIONS_SIZE: 4,    // r,g,b and MODE
     }
 }
 
 
 
 
-function returnAllStructures() {
+function returnAllStructures( customScenarioObject ) {
 
 
 
 
-    const seedtouse = '2bonis_enterprises';
+    var seedtouse = '' + generatedSeed;
     EZWG.SHA1.seed(seedtouse);
 
+    // Useful for keeping track of values to use for 
+    var STAD = initNewEntityDictionary();
     
     var spacing = 0.3;     // Spacing between the particles inside the cube structure
-    var stdvoxeldensity = 0.1; //
+    STAD.spacing = spacing;
+
+    var stdvoxeldensity = 0.09;
+    STAD.stdvoxeldensity = stdvoxeldensity;
+
+    var titevoxeldensity = 0.075;
+    STAD.titevoxeldensity = titevoxeldensity;
+
     var minivoxeldensity = 0.03;
+    STAD.minivoxeldensity = minivoxeldensity;
+
     var bucks_pacing = 1.0;// Spacing between grid entities
+    STAD.bucks_pacing = bucks_pacing;
+
     var innerCircleSpawnRatio = 0.15;// how much of the radiuso nthe sinse
+    STAD.innerCircleSpawnRatio = innerCircleSpawnRatio;
+
+
+
+    // Extra voxel sizing paramters
+    STAD.largervoxeldensity = STAD.stdvoxeldensity * 1.4;// for larger spacing of voxels to fill the extra spacin
+    STAD.larger_voxel_sizer = 1.62;// (for mega worm and larger buildings)
 
 
     var COLLISION_ORB_TYPE_GOOD = 0;
@@ -101,425 +126,73 @@ function returnAllStructures() {
         JUST_CHILL: 0,      // 0 = do not move ( ONLY APPLIES IF AI)
         MOVE_TOWRDS: 1,     // 1 = move towards your target_id ( ONLY APPLIES IF AI)
         RANDOM_3D: 2,       // 2 = go to random location for movement( ONLY APPLIES IF AI)
-        RANDOM_GROUND: 3    // 3 = go to random location on the ground (ONLY APPLIES IF AI)
-
+        RANDOM_GROUND: 3,   // 3 = go to random location on the ground (ONLY APPLIES IF AI)
+        INTELLIGENT_CTRL: 4,        // 4 = determined by what the user selected
+        RANDOM_BOMBARDER: 5     // 5 = only applies if AI stay up and bomb random targets w LASER
     };
 
-    
 
 
-    var ALL_ENTITY_ROLES = {
-        CHILL1: { ind : -1 },       // Doesn't do anything
-        CAR1: { ind : -1 },
-        CTRLFISH1: { ind : -1 },    // Fish point one
-        TRUCKBEACHBOY1: { ind : -1 },
-        TRUCKFREEROAM1: { ind : -1 },
-        PLECKO1: { ind : -1 },
-        TRENDINGFISH1:{ ind : -1 },     // Head of da feesh
-        PLAYFULFISH1:{ ind : -1 }, 
-        PLAYFULFISH2:{ ind : -1 },  
-        SEAWEED1:{ ind : -1 },
-        MANTARAY1:{ ind : -1 },
-        STARDESTROYER1:{ ind : -1 },
-        THUNDERCLOUD1:{ ind : -1 },
-        DRIFT1:{ ind : -1 },        // Sea urchin bomb 1
-        DRIFT_BEACHBALL1:{ ind : -1 },        // Beachballl driftin around
-    }
-
-    
-
-
-    // DONTUT CHANGE - ADD RESERVED PARTICLES for EntitYRoles - add reserved here
-
-    // Ok now build out the database
-    // For each new type add it on here:
-    var entity_role_templates = [];     // JUST A LINEAR INDEXING OF ALL THE ENTITY ROLES
 
     // How many f32's an ent role takes up
     // this number expands the more complicated roles get
-    var ENT_ROLES_SIZE = 14;
+    var ENT_ROLES_SIZE = 18;
+    STAD.ENT_ROLES_SIZE = ENT_ROLES_SIZE;
 
-    // 0
-    ALL_ENTITY_ROLES.CHILL1 = 
-        createNewEntityRoleInDatabase( entity_role_templates,
-            {
-                ind: entity_role_templates.length,  // index of the entity roles 
-                top_pull: 0,
-                bottom_pull: 0,
-                target_id: "-none---",      // attribute of STAD that has the ID of a particle to follow (INSERTED AT THE END)
-                collide_with: 2,            //0 = coolide with good 
-                                            // 1= colllide with bad
-                                            // 2 = collide with all except own collision balls with your teal m3 
-                                            //      value (the +1 ind of the teal particle for that entity)
-                                            // 3 = ????
-                forward_engine: 0.02,       // how does the forward engine work
-                backward_engine: 0.00,      // how much pull back on the back for orienting
-                grav_pull: 0.00061,         // how much gravity to apply to each
-                reserved_particles: [],     // reserved particle amount
-                user_ctrl_scheme: 1,         //1= truck mode (WASD forward/back)
-                                    //2 = float mode (WASD flightstick/thrust)
-                                    //3 = float mode (WASD flightstick/thrust) ( and WIGGLE for boost )
-                                    //4 = helicopter movement
-                                    //5 = ufo
-                                    // ( THIS VALUE used by ai controlled to 
-                                    //      determine how to move the thing)
-                top_bottom_mass_ratio: 1,// multiply all the top forces by this to get even balanceer
-                rotation_engine: 0.01, // turn force for left n right, and tilting up n down
 
-                behaviour_type: 0,   // 0 = do not move ( ONLY APPLIES IF AI)
-                                    // 1 = move towards your target_id ( ONLY APPLIES IF AI)
-                                    // 2 = do a long distnace attack ( ONLY APPLIES IF AI)
-                                    // 3 = go to random location on the ground (ONLY APPLIES IF AI)
-                max_sight_range: 64.0,        // # = max radius to ntoice the teal particle of ur target_id entity( ONLY APPLIES IF AI)
-                                    // *bucks_pacing   ?
-                idle_activity: 0,          // 0 = do nothing when ur target is not in sight( ONLY APPLIES IF AI)
-                                           // 1 = ????
-                max_attack_range: 64.0     // # = max radius to do an attack on ur target id
-                    // ??/?
+    // CUSTOM OBJECT INFO
+    var SCENARIO_TYPE = customScenarioObject ? customScenarioObject.type : "";
+    // ^ always "soloarcade" i think
 
-                
-            }
-        );
-    
+    // Starter number for the scenario object
+    var SCENARIO_STARTER_NUMBER = customScenarioObject ? customScenarioObject.starting : -1;
 
 
 
 
-    // 1
-    ALL_ENTITY_ROLES.CAR1 = 
-        createNewEntityRoleInDatabase( entity_role_templates,
-            {
-                ind: entity_role_templates.length,  // index of the entity roles 
-                top_pull: 0.0115 * 2,
-                bottom_pull: -0.0115 * 3,
-                target_id: "-none---",          // no target because you are being controlled by the player
-                collide_with: 2,                // collide with both
-                forward_engine: 0.005,
-                backward_engine: -0.02,          // how much pull back on the back for orienting
-                grav_pull: 0.00064,
-                reserved_particles: [
-                    {size: 200, t: 15}, // water-like mud that gets kicked up
-                    {size: 32, t: 15}   // KEEP it to 15 (water particles) BUT they're just never activated so it stays as 14
-                ],          // reserved particle amount
-                user_ctrl_scheme: 1,
-                top_bottom_mass_ratio: 1,// multiply all the top forces by this to get even balanceer
-                rotation_engine: 0.01, // turn force for left n right, and tilting up n down
-                behaviour_type: 0,   
-                max_sight_range: 64.0,        // # = max radius to ntoice the teal particle of ur target_id entity( ONLY APPLIES IF AI)
-                                    // *bucks_pacing   ?
-                idle_activity: 0,          // 0 = do nothing when ur target is not in sight( ONLY APPLIES IF AI)
-                                           // 1 = ????
-                max_attack_range: 64.0     // # = max radius to do an attack on ur target id
-            }
-        );
-
-    // 2
-    ALL_ENTITY_ROLES.CTRLFISH1 = 
-        createNewEntityRoleInDatabase( entity_role_templates,
-            {
-                ind: entity_role_templates.length,  // index of the entity roles 
-                top_pull: 0.0115 * 0.3,
-                bottom_pull: -0.0115 * 0.3,
-                target_id: "-none---",          // no target because you are being controlled by the player
-                collide_with: 2,                // collide with bad
-                forward_engine: 0.0122,          // how much forward thrust
-                backward_engine: 0.0,          // how much pull back on the back for orienting
-                grav_pull: 0.0,//0.00084,//..
-                reserved_particles: [
-                    {size: 200, t: 15}, // water-like mud that gets kicked up
-                    {size: 26, t: 15},   // KEEP it to 15 (water particles) BUT they're just never activated so it stays as 14 
-                    //{size: 26, t: 15},   // KEEP it to 15 (water particles) BUT they're just never activated so it stays as 14 (but for the ent youre targeting)
-                    {size: 500, t: 19, smk: 21}    // add one MISSILE[0]. [1-199] smolk particles (being 21)
-                ],          // reserved particle amount
-                user_ctrl_scheme: 3,
-                top_bottom_mass_ratio: 1.04,// multiply all the top forces by this to get even balanceer
-                rotation_engine: 0.016, // turn force for left n right, and tilting up n down for left n right, and tilting up n down
-                behaviour_type: 0,   
-            }
-        );
+    // ____    _   _   _____   _____   _____   ____  
+    // | __ )  | | | | |  ___| |  ___| | ____| |  _ \ 
+    // |  _ \  | | | | | |_    | |_    |  _|   | |_) |
+    // | |_) | | |_| | |  _|   |  _|   | |___  |  _ < 
+    // |____/   \___/  |_|     |_|     |_____| |_| \_\
+                                                   
+    //  ____    _____   _____   ___   ____            
+    // / ___|  | ____| |_   _| |_ _| |  _ \           
+    // \___ \  |  _|     | |    | |  | |_) |          
+    //  ___) | | |___    | |    | |  |  __/           
+    // |____/  |_____|   |_|   |___| |_|              
+                                                   
 
 
 
-    // 4 Evil Car runin u over role, stock target at certain elevation
-    ALL_ENTITY_ROLES.TRUCKBEACHBOY1 = 
-        createNewEntityRoleInDatabase( entity_role_templates,
-            {
-                ind: entity_role_templates.length,  // index of the entity roles 
-                top_pull: 0.0115 * 1.11,
-                bottom_pull: -0.0115 * 0.45,
-                target_id: "instance_beachball1",    // attribute of STAD that has the ID of a particle to follow 
-                collide_with: 2,                // collide with both 
-                forward_engine: 0.05,
-                backward_engine: -0.02,       // how much pull back on the back for orienting
-                grav_pull: 0.0007,          
-                reserved_particles: [],          // reserved particle amount
-                user_ctrl_scheme: 1,
-                top_bottom_mass_ratio: 1,// multiply all the top forces by this to get even balanceer
-                rotation_engine: 0.01, // turn force for left n right, and tilting up n down
-                behaviour_type: 1,   
-            }
-        );
-
-
-    ALL_ENTITY_ROLES.TRUCKFREEROAM1 = 
-        createNewEntityRoleInDatabase( entity_role_templates,
-            {
-                ind: entity_role_templates.length,  // index of the entity roles 
-                top_pull: 0.0115 * 1.11,
-                bottom_pull: -0.0115 * 0.45,
-                target_id: "-none---",    // attribute of STAD that has the ID of a particle to follow 
-                collide_with: 2,                // collide with both 
-                forward_engine: 0.05,
-                backward_engine: -0.02,       // how much pull back on the back for orienting
-                grav_pull: 0.0007,          
-                reserved_particles: [],          // reserved particle amount
-                user_ctrl_scheme: 1,
-                top_bottom_mass_ratio: 1,// multiply all the top forces by this to get even balanceer
-                rotation_engine: 0.01, // turn force for left n right, and tilting up n down
-                behaviour_type: 3,   
-            }
-        );
-        
-        
 
 
 
-    // 5
-    ALL_ENTITY_ROLES.PLECKO1 = 
-        createNewEntityRoleInDatabase( entity_role_templates,
-            {
-                ind: entity_role_templates.length,  // index of the entity roles 
-                top_pull: 0.0115 * 1,
-                bottom_pull: -0.0115 * 2,
-                target_id: "-nonen-",   // attribute of STAD that has the ID of a particle to follow 
-                collide_with: 2,                // collide with both 
-                forward_engine: 0.005,
-                backward_engine: -0.004,
-                grav_pull: 0.00011,          
-                reserved_particles: [],          // reserved particle amount
-                user_ctrl_scheme: 1,
-                top_bottom_mass_ratio: 1,// multiply all the top forces by this to get even balanceer
-                rotation_engine: 0.01, // turn force for left n right, and tilting up n down
-                behaviour_type: 3,   
-            }
-        );
-    
 
 
-    // 6
-    ALL_ENTITY_ROLES.TRENDINGFISH1 = 
-        createNewEntityRoleInDatabase( entity_role_templates,
-            {
-                ind: entity_role_templates.length,  // index of the entity roles 
-                top_pull: 0.0115 * 0.05,
-                bottom_pull: -0.0115 * 0.05,
-                target_id: "-nonen-",    // attribute of STAD that has the ID of a particle to follow 
-                collide_with: 2,                // collide with good and bad (collide with both )
-                forward_engine: 0.003,
-                backward_engine: -0.001,
-                grav_pull: 0,//0.00011,          
-                reserved_particles: [],          // reserved particle amount
-                user_ctrl_scheme: 2,
-                top_bottom_mass_ratio: 1.3,// multiply all the top forces by this to get even balanceer
-                rotation_engine: 0.01, // turn force for left n right, and tilting up n down
-                behaviour_type: 2,   
-            }
-        );
-        
-    // 6
-    ALL_ENTITY_ROLES.PLAYFULFISH1 = 
-        createNewEntityRoleInDatabase( entity_role_templates,
-            {
-                ind: entity_role_templates.length,  // index of the entity roles 
-                top_pull: 0.0115 * 0.05,
-                bottom_pull: -0.0115 * 0.05,
-                target_id: "instance_plecko1", // attribute of STAD that has the ID of a particle to follow 
-                collide_with: 2,                // collide with good and bad (collide with both )
-                forward_engine: 0.0024,
-                backward_engine: -0.001,
-                grav_pull: 0,//0.00011,          
-                reserved_particles: [],          // reserved particle amount
-                user_ctrl_scheme: 2,
-                top_bottom_mass_ratio: 1.1,// multiply all the top forces by this to get even balanceer
-                rotation_engine: 0.01, // turn force for left n right, and tilting up n down
-                behaviour_type: 1,  
-            }
-        );
-        
-    // 6
-    ALL_ENTITY_ROLES.PLAYFULFISH2 = 
-        createNewEntityRoleInDatabase( entity_role_templates,
-            {
-                ind: entity_role_templates.length,  // index of the entity roles 
-                top_pull: 0.0115 * 0.05,
-                bottom_pull: -0.0115 * 0.05,
-                target_id: "instance_playfulfish1", // attribute of STAD that has the ID of a particle to follow 
-                collide_with: 2,                // collide with good and bad (collide with both )
-                forward_engine: 0.0024,
-                backward_engine: -0.001,
-                grav_pull: 0,//0.00011,          
-                reserved_particles: [],          // reserved particle amount
-                user_ctrl_scheme: 2,
-                top_bottom_mass_ratio: 1.1,// multiply all the top forces by this to get even balanceer
-                rotation_engine: 0.01, // turn force for left n right, and tilting up n down
-                behaviour_type: 1,  
-            }
-        );
-    
-    // 7
-    ALL_ENTITY_ROLES.SEAWEED1 = 
-        createNewEntityRoleInDatabase( entity_role_templates,
-            {
-                ind: entity_role_templates.length,  // index of the entity roles 
-                top_pull: 0.0115 * 1.2,
-                bottom_pull: -0.0115 * 2.6,
-                target_id: "-nonen-",    // attribute of STAD that has the ID of a particle to follow 
-                collide_with: 2,                // collide with good 
-                forward_engine: 0.0,
-                backward_engine: 0.0,
-                grav_pull: 0.00024,          
-                reserved_particles: [],          // reserved particle amount
-                user_ctrl_scheme: 1,
-                top_bottom_mass_ratio: 1,// multiply all the top forces by this to get even balanceer
-                rotation_engine: 0.01, // turn force for left n right, and tilting up n down
-                behaviour_type: 0,   
-            }
-        );
-        
-    // 8 Lakitu role, stock target at certain elevation
-    ALL_ENTITY_ROLES.MANTARAY1 = 
-        createNewEntityRoleInDatabase( entity_role_templates,
-            {
-                ind: entity_role_templates.length,  // index of the entity roles 
-                top_pull: 0.0115 * 0.021,
-                bottom_pull: -0.0115 * 0.015,
-                target_id: "instance_urfish",    // attribute of STAD that has the ID of a particle to follow 
-                collide_with: 0,                // collide with good
-                forward_engine: 0.0032,
-                backward_engine: -0.0015,       // how much pull back on the back for orienting
-                grav_pull: 0.00011,          
-                reserved_particles: [],          // reserved particle amount
-                user_ctrl_scheme: 2,
-                top_bottom_mass_ratio: 1,// multiply all the top forces by this to get even balanceer
-                rotation_engine: 0.01, // turn force for left n right, and tilting up n down
-                behaviour_type: 1,   
-            }
-        );
-
-        
-    // 9 Star destroyer
-    ALL_ENTITY_ROLES.STARDESTROYER1 = 
-        createNewEntityRoleInDatabase( entity_role_templates,
-            {
-                ind: entity_role_templates.length,  // index of the entity roles 
-                top_pull: 0.0115 * 0.15,
-                bottom_pull: -0.0115 * 0.11,
-                target_id: "-none---",//"instance_beachball1",    // attribute of STAD that has the ID of a particle to follow 
-                collide_with: 0,                // collide with good
-                forward_engine: 0.0042,
-                backward_engine: -0.0015,       // how much pull back on the back for orienting
-                grav_pull: 0.00021,          
-                reserved_particles: [],          // reserved particle amount
-                user_ctrl_scheme: 2,
-                top_bottom_mass_ratio: 1,// multiply all the top forces by this to get even balanceer
-                rotation_engine: 0.01, // turn force for left n right, and tilting up n down
-                behaviour_type: 3,   
-            }
-        );
-
-        
-        
-    // 10 Thunder cloud
-    ALL_ENTITY_ROLES.THUNDERCLOUD1 = 
-        createNewEntityRoleInDatabase( entity_role_templates,
-            {
-                ind: entity_role_templates.length,  // index of the entity roles 
-                top_pull: 0.0115 * 0.21,
-                bottom_pull: -0.0115 * 0.21,
-                target_id: "instance_urfish",    // attribute of STAD that has the ID of a particle to follow 
-                collide_with: 0,                // collide with good
-                forward_engine: 0.0082,
-                backward_engine: -0.0015,       // how much pull back on the back for orienting
-                grav_pull: 0.0,          
-                reserved_particles: [
-                    {size: 1200, t: 15}  // all the particles start off as t:14, this 't' determines what kind it transforms into 
-                ],
-                user_ctrl_scheme: 2,
-                top_bottom_mass_ratio: 1,// multiply all the top forces by this to get even balanceer
-                rotation_engine: 0.01 // turn force for left n right, and tilting up n down
-            }
-        );
-        
-
-    // 12
-    ALL_ENTITY_ROLES.DRIFT1 = 
-        createNewEntityRoleInDatabase( entity_role_templates,
-            {
-                ind: entity_role_templates.length,  // index of the entity roles 
-                top_pull: 0,
-                bottom_pull: 0,
-                target_id: "-none---",      // attribute of STAD that has the ID of a particle to follow (INSERTED AT THE END)
-                collide_with: 2,            // both good and bad
-                forward_engine: 0.02,       // how does the forward engine work
-                backward_engine: 0.00,      // how much pull back on the back for orienting
-                grav_pull: 0.0,             // how much gravity to apply to each
-                reserved_particles: [],     // reserved particle amount
-                user_ctrl_scheme: 1,         //1= truck mode (WASD forward/back)
-                                        //2 = float mode (WASD flightstick/thrust)
-                                        //3=helicopter movement
-                                        //4=ufo
-                top_bottom_mass_ratio: 1,// multiply all the top forces by this to get even balanceer
-                rotation_engine: 0.01 // turn force for left n right, and tilting up n down
-            }
-        );
-
-        
-    // 13
-    ALL_ENTITY_ROLES.DRIFT_BEACHBALL1 = 
-        createNewEntityRoleInDatabase( entity_role_templates,
-            {
-                ind: entity_role_templates.length,  // index of the entity roles 
-                top_pull: 0,//0.0115 * 0.05,
-                bottom_pull: 0,//-0.0115 * 0.05,
-                target_id: "-none---",      // attribute of STAD that has the ID of a particle to follow (INSERTED AT THE END)
-                collide_with: 2,            // both good and bad
-                forward_engine: 0.018,       // how does the forward engine work
-                backward_engine: -0.012,      // how much pull back on the back for orienting
-                grav_pull: 0.0005,             // how much gravity to apply to each
-                reserved_particles: [],     // reserved particle amount
-                user_ctrl_scheme: 1,         //1= truck mode (WASD forward/back)
-                                        //2 = float mode (WASD flightstick/thrust)
-                                        //3=helicopter movement
-                                        //4=ufo
-                top_bottom_mass_ratio: 1,// multiply all the top forces by this to get even balanceer
-                rotation_engine: 0.01, // turn force for left n right, and tilting up n down
-                behaviour_type: 3,   // 0 = do not move ( ONLY APPLIES IF AI)
-                                    // 1 = move towards your target_id ( ONLY APPLIES IF AI)
-                                    // 2 = go to random location for movement( ONLY APPLIES IF AI)
-                                    // 3 = go to random location on the ground (ONLY APPLIES IF AI)
-            }
-        );
-
-
-    
-    // Useful for keeping track of values to use for 
-    var STAD = initNewEntityDictionary();
 
     
     var icspr = innerCircleSpawnRatio;
+    STAD.icspr = icspr;
     var oneSideLength = STAD.BUCKET_PERIMETER * bucks_pacing;
-    
+    STAD.oneSideLength = oneSideLength;
 
     
     
     var middleSpawnPointX = oneSideLength/2;
+    STAD.middleSpawnPointX = middleSpawnPointX;
     var middleSpawnPointY = oneSideLength/2;
+    STAD.middleSpawnPointY = middleSpawnPointY;
 
     var startOfRandoSquareX =  (oneSideLength-(icspr*oneSideLength)) / 2;
+    STAD.startOfRandoSquareX = startOfRandoSquareX;
     var startOfRandoSquareY =  (oneSideLength-(icspr*oneSideLength)) / 2;
+    STAD.startOfRandoSquareY = startOfRandoSquareY;
 
     var spawnAreaLengthX = oneSideLength * icspr;
+    STAD.spawnAreaLengthX = spawnAreaLengthX;
     var spawnAreaLengthY = oneSideLength * icspr;
+    STAD.spawnAreaLengthY = spawnAreaLengthY;
     
 
 
@@ -542,7 +215,15 @@ function returnAllStructures() {
         MAX_weapons_registered: STAD.MAX_WEAPONS,
 
         Considered_Weapons: [...STAD.consideredWeapons],
-        currentlistofweaponsparticles: []// THE particle id's of the weapons (to be added to DB)
+        currentlistofweaponsparticles: [],// THE particle id's of the weapons (to be added to DB)
+
+        allTheTealParticles: [],// store all the guys <- NOT USED!!!!!!!??????????
+
+
+        currentlistofspecialparticlemovements: [],// THE rgb colours of the identifying (to be added to DB)
+        specialparticlemovementssize: STAD.SPECIAL_COLOUR_INSTRUCTIONS_SIZE // size 4 r,g,b  and mode
+
+
     };  
     
     
@@ -664,459 +345,99 @@ function returnAllStructures() {
         STAD.BUCKET_PERIMETER, bucks_pacing, totalParticleIndexTracker );
 
 
-    var groundParticlesReservedForDeco = [];
-    // t = 3
-    // STAD.thegroundparts = addGroundDecoParticles(
-    //     0,0,0,
-    //     groundParticlesReservedForDeco, 
-    //     STAD.BUCKET_PERIMETER, bucks_pacing, 8, totalParticleIndexTracker );
+        
 
 
+
+
+
+
+    //  ____     ____   _____   _   _             
+    // / ___|   / ___| | ____| | \ | |            
+    // \___ \  | |     |  _|   |  \| |            
+    //  ___) | | |___  | |___  | |\  |            
+    // |____/   \____| |_____| |_| \_|            
+                                               
+    //     _      ____    ___    ___              
+    //    / \    |  _ \  |_ _|  / _ \             
+    //   / _ \   | |_) |  | |  | | | |            
+    //  / ___ \  |  _ <   | |  | |_| |            
+    // /_/   \_\ |_| \_\ |___|  \___/             
+                                               
+    //      ____    _____   _   _   _____   _____ 
+    //     / ___|  |_   _| | | | | |  ___| |  ___|
+    //     \___ \    | |   | | | | | |_    | |_   
+    //      ___) |   | |   | |_| | |  _|   |  _|  
+    //     |____/    |_|    \___/  |_|     |_|    
+                                               
+                                               
+              
+
+    // DONTUT CHANGE - ADD RESERVED PARTICLES for EntitYRoles - add reserved here
+
+    // Ok now build out the database
+    // For each new type add it on here:
+    var entity_role_templates = [];     // JUST A LINEAR INDEXING OF ALL THE ENTITY ROLES                                 
+                                               
+        
  
     // Contains all the collision enabled entities 
     var locationsOfTheseNewEntities = [];   //(maxEntities)
 
-    
- 
+     
+    // Title screen                           
+    if( !customScenarioObject ){
+        console.log(' TITLE SCREEN ==============================================');
+        STAD.locationsOfTheseNewEntities = 
+            SS_titleScreenSetter( locationsOfTheseNewEntities, theseNewDbEntries, totalParticleIndexTracker, entity_role_templates, STAD );
 
-    var newpartsForMainCharGuyt = [];
-    console.log('ALL_ENTITY_ROLES.CTRLFISH1.ind', ALL_ENTITY_ROLES.CTRLFISH1.ind);
-    
-    STAD.instance_urfish = addVoxelModelApplyOrientersAndBindNearest(
-        middleSpawnPointX, 6.0, middleSpawnPointY,
-        newpartsForMainCharGuyt, theseNewDbEntries, getVoxelModel( "lilfish1" ),//( "lilfish2"), "lilminnow1""biggertruck
-        stdvoxeldensity, totalParticleIndexTracker,
-        {
-            debugrender: true,
-            entityrole: ALL_ENTITY_ROLES.CTRLFISH1,        
-            bindunits: 8.0,       //multiply factor of spacing for spring connection
-            orientbind: 1.5,      //multiply factor for orienting control cataloguing
-            allowedspringtypes: STAD.springAllowedTees,
-            reserve_cpu_readbackspot: true,  // if true, reserve a spot in the scratch pad
-            collision_orbs_mode: "good"     // all collisino orbs (t=5, r=255,g=120,b=120) which side do they go on.
+
+    }
+    // Spec game
+    else{
+        console.log(' GAME SCENARIO LOAD =============================================')
+        console.log( JSON.stringify(customScenarioObject));
+
+        // Create a player object and tie it to da thing
+        INTELLIGENTLY_CONTROLLED = [
+            {tealind: -1, human: true}   // the entity youre contorlling teal ind (as the CPU details it)
+        ];
+
+        // Set this client to the only controller slot avaialble
+        THIS_CLIENT_CONTROL_IND = 0;
+
+        // Spongebob city scape
+        if( customScenarioObject.starting === 0 || customScenarioObject.starting === 1 ){
+            STAD.locationsOfTheseNewEntities = 
+                startSpongeCity( customScenarioObject, locationsOfTheseNewEntities, theseNewDbEntries, totalParticleIndexTracker, entity_role_templates, STAD );
         }
-    );
-    locationsOfTheseNewEntities = locationsOfTheseNewEntities.concat( newpartsForMainCharGuyt );
-
-
-
- 
- 
- 
-
-
- 
-
-    
-    var newParts_For_A_Blimp = [];
-    console.log('ALL_ENTITY_ROLES.PLECKO1.ind', ALL_ENTITY_ROLES.PLECKO1.ind);
-    STAD.instance_plecko1 = addVoxelModelApplyOrientersAndBindNearest(
-        middleSpawnPointX-6.0, 15.0, middleSpawnPointY + 6.0,
-        newParts_For_A_Blimp, theseNewDbEntries, getVoxelModel( "lilplecko1"),
-        stdvoxeldensity, totalParticleIndexTracker,
-        {
-            debugrender: true,
-            entityrole: ALL_ENTITY_ROLES.PLECKO1,     
-            bindunits: 5.0,                                 
-            orientbind: 2.5,                                
-            allowedspringtypes: STAD.springAllowedTees,     
-            reserve_cpu_readbackspot: true,                 
-            collision_orbs_mode: "bad"                      
+        // Spoongebob surgery
+        else if(customScenarioObject.starting === 2){
+            STAD.locationsOfTheseNewEntities = 
+                startBumblebeeSim( customScenarioObject, locationsOfTheseNewEntities, theseNewDbEntries, totalParticleIndexTracker, entity_role_templates, STAD );
         }
-    );
-    locationsOfTheseNewEntities = locationsOfTheseNewEntities.concat( newParts_For_A_Blimp );
 
 
+        // STAD.locationsOfTheseNewEntities = 
+        //     startRogueLike( locationsOfTheseNewEntities, theseNewDbEntries, totalParticleIndexTracker, entity_role_templates, STAD );
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-    //  ADD
-    //      TREND SETTER FISH
-    //          =================================================================================================
-    //                          A L P H A   T R E N D    S E T T E R    F I S H
-    //__________________________________________________________________________________
-
-    var new_fish_parts = [];
-    console.log('ALL_ENTITY_ROLES.TRENDINGFISH1.ind', ALL_ENTITY_ROLES.TRENDINGFISH1.ind)
-    addVoxelModelApplyOrientersAndBindNearest(
-        middleSpawnPointX-7.0, 15.0, middleSpawnPointY + 8.0,
-        new_fish_parts, theseNewDbEntries, getVoxelModel("lilminnow1"),
-        stdvoxeldensity, totalParticleIndexTracker,
-        {
-            debugrender: true,
-            entityrole: ALL_ENTITY_ROLES.TRENDINGFISH1,      
-            bindunits: 6.0,                                 
-            orientbind: 2.5,                                
-            allowedspringtypes: STAD.springAllowedTees,     
-            reserve_cpu_readbackspot: true,                 
-            collision_orbs_mode: "bad"                      
-        }
-    );
-    locationsOfTheseNewEntities = locationsOfTheseNewEntities.concat( new_fish_parts );
-
-
-
-    new_fish_parts= [];
-    addVoxelModelApplyOrientersAndBindNearest(
-        middleSpawnPointX-2.0, 12.0, middleSpawnPointY + 8.0,
-        new_fish_parts, theseNewDbEntries, getVoxelModel("lilminnow2"),
-        stdvoxeldensity, totalParticleIndexTracker,
-        {
-            debugrender: true,
-            entityrole: ALL_ENTITY_ROLES.TRENDINGFISH1,      
-            bindunits: 6.0,                                 
-            orientbind: 2.5,                                
-            allowedspringtypes: STAD.springAllowedTees,     
-            reserve_cpu_readbackspot: true,                 
-            collision_orbs_mode: "bad"                      
-        }
-    );
-    locationsOfTheseNewEntities = locationsOfTheseNewEntities.concat( new_fish_parts );
-
-    new_fish_parts= [];
-    addVoxelModelApplyOrientersAndBindNearest(
-        middleSpawnPointX+2.0, 13.0, middleSpawnPointY + 8.0,
-        new_fish_parts, theseNewDbEntries, getVoxelModel("lilminnow3"),
-        stdvoxeldensity, totalParticleIndexTracker,
-        {
-            debugrender: true,
-            entityrole: ALL_ENTITY_ROLES.TRENDINGFISH1,      
-            bindunits: 6.0,                                 
-            orientbind: 2.5,                                
-            allowedspringtypes: STAD.springAllowedTees,     
-            reserve_cpu_readbackspot: true,                 
-            collision_orbs_mode: "bad"                      
-        }
-    );
-    locationsOfTheseNewEntities = locationsOfTheseNewEntities.concat( new_fish_parts );
-    
-
-    new_fish_parts= [];
-    addVoxelModelApplyOrientersAndBindNearest(
-        middleSpawnPointX+7.0, 8.0, middleSpawnPointY + 8.0,
-        new_fish_parts, theseNewDbEntries, getVoxelModel("lilminnow4"),
-        stdvoxeldensity, totalParticleIndexTracker,
-        {
-            debugrender: true,
-            entityrole: ALL_ENTITY_ROLES.TRENDINGFISH1,      
-            bindunits: 6.0,                                 
-            orientbind: 2.5,                                
-            allowedspringtypes: STAD.springAllowedTees,     
-            reserve_cpu_readbackspot: true,                 
-            collision_orbs_mode: "bad"                      
-        }
-    );
-    locationsOfTheseNewEntities = locationsOfTheseNewEntities.concat( new_fish_parts );
-
-    
-    
-    //  ADD
-    //      PLAYFUL CHASER FISH
-    //          =================================================================================================
-    //                          H A R M L E S S   C H A S E R    F I S H
-    //__________________________________________________________________________________
-
-
-    var new_partss_4_playful_feesh = [];
-    console.log('ALL_ENTITY_ROLES.PLAYFULFISH1.ind', ALL_ENTITY_ROLES.PLAYFULFISH1.ind)
-    
-    STAD.instance_playfulfish1 = addVoxelModelApplyOrientersAndBindNearest(
-        middleSpawnPointX-2.0, 7.0, middleSpawnPointY + 4.0  + 0*4,
-        new_partss_4_playful_feesh, theseNewDbEntries, getVoxelModel("lilfish2"),
-        stdvoxeldensity, totalParticleIndexTracker,
-        {
-            debugrender: true,
-            entityrole: ALL_ENTITY_ROLES.PLAYFULFISH1,      
-            bindunits: 6.0,                                 
-            orientbind: 2.5,                                
-            allowedspringtypes: STAD.springAllowedTees,     
-            reserve_cpu_readbackspot: true,                 
-            collision_orbs_mode: "bad"                      
-        }
-    );
-    locationsOfTheseNewEntities = locationsOfTheseNewEntities.concat( new_partss_4_playful_feesh );
-
-    new_partss_4_playful_feesh = [];
-    STAD.instance_playfulfish2 = addVoxelModelApplyOrientersAndBindNearest(
-        middleSpawnPointX-2.0, 7.0, middleSpawnPointY + 4.0  + 1*4,
-        new_partss_4_playful_feesh, theseNewDbEntries, getVoxelModel("lilfish2"),
-        stdvoxeldensity, totalParticleIndexTracker,
-        {
-            debugrender: true,
-            entityrole: ALL_ENTITY_ROLES.PLAYFULFISH2,      
-            bindunits: 6.0,                                 
-            orientbind: 2.5,                                
-            allowedspringtypes: STAD.springAllowedTees,     
-            reserve_cpu_readbackspot: true,                 
-            collision_orbs_mode: "bad"                      
-        }
-    );
-    locationsOfTheseNewEntities = locationsOfTheseNewEntities.concat( new_partss_4_playful_feesh );
-
-
-
-
-    //  ADD
-    //      GROUND FAUNA
-    //          =================================================================================================
-    //                          H A R M L E S S    G R O U N D    D E C O R 
-    //__________________________________________________________________________________
-    let spanx = spawnAreaLengthX*2;
-    let spany = spawnAreaLengthY*2;
-    for(let sc = 0;sc < 14;sc++){
-        let faunalist = [];
-        console.log('ALL_ENTITY_ROLES.SEAWEED1.ind', ALL_ENTITY_ROLES.SEAWEED1.ind)
-        
-        //STAD["instance_seaweedf"] = 
-        addVoxelModelApplyOrientersAndBindNearest(
-            middleSpawnPointX - spawnAreaLengthX + EZWG.SHA1.random()*spanx ,
-            EZWG.SHA1.random()*STAD.BUCKET_PERIMETER*bucks_pacing*0.1,
-            middleSpawnPointY - spawnAreaLengthY + EZWG.SHA1.random()*spany,
-            faunalist, theseNewDbEntries, getVoxelModel("seaweed"),
-            stdvoxeldensity, totalParticleIndexTracker,
-            {
-                debugrender: true,
-                entityrole: ALL_ENTITY_ROLES.SEAWEED1,      
-                bindunits: 7.0,                                 
-                orientbind: 1.5,                                
-                allowedspringtypes: STAD.springAllowedTees,     
-                reserve_cpu_readbackspot: true,                 
-                collision_orbs_mode: "bad"                      
-            }
-        );
-        locationsOfTheseNewEntities = locationsOfTheseNewEntities.concat( faunalist );
     }
 
-
-
-
-
-
-    //  ADD
-    //      TRUCK BALL PLAYERS
-    //          =================================================================================================
-    //                          B E A C H   B O Y S   T R U C K    R A L L Y
-    //__________________________________________________________________________________
-
-    var new_parts_truck = [];
-    console.log('ALL_ENTITY_ROLES.TRUCKBEACHBOY1.ind', ALL_ENTITY_ROLES.TRUCKBEACHBOY1.ind);
     
-    // RED TRUCK
-    addVoxelModelApplyOrientersAndBindNearest(
-        middleSpawnPointX + spawnAreaLengthX, 8.0, middleSpawnPointY - spawnAreaLengthY,
-        new_parts_truck, theseNewDbEntries, getVoxelModel("lofitruck"),
-        stdvoxeldensity, totalParticleIndexTracker,
-        {
-            debugrender: true,
-            entityrole: ALL_ENTITY_ROLES.TRUCKBEACHBOY1,   
-            bindunits: 6.0,
-            orientbind: 1.0,
-            allowedspringtypes: STAD.springAllowedTees,
-            reserve_cpu_readbackspot: true,  
-            collision_orbs_mode: "bad",
-            paintjobs:[
-                {input:{r:101,g:99,b:109}, output:{r:215, g: 17, b: 17}},
-            ]
-        }
-    ); 
-    locationsOfTheseNewEntities = locationsOfTheseNewEntities.concat( new_parts_truck );
- 
-    // GREEN TRUCK
-    new_parts_truck = [];
-    addVoxelModelApplyOrientersAndBindNearest(
-        middleSpawnPointX - spawnAreaLengthX, 8.0, middleSpawnPointY + spawnAreaLengthY,
-        new_parts_truck, theseNewDbEntries, getVoxelModel("lofitruck"),
-        stdvoxeldensity, totalParticleIndexTracker,
-        {
-            debugrender: true,
-            entityrole: ALL_ENTITY_ROLES.TRUCKFREEROAM1,   
-            bindunits: 6.0,
-            orientbind: 1.0,
-            allowedspringtypes: STAD.springAllowedTees,
-            reserve_cpu_readbackspot: true,  
-            collision_orbs_mode: "bad",
-            paintjobs:[
-                {input:{r:101,g:99,b:109}, output:{r:21, g: 226, b: 36}},
-            ]
-        }
-    ); 
-    locationsOfTheseNewEntities = locationsOfTheseNewEntities.concat( new_parts_truck );
-
-    // YELLOW TRUCK
-    new_parts_truck = [];
-    addVoxelModelApplyOrientersAndBindNearest(
-        middleSpawnPointX + spawnAreaLengthX, 8.0, middleSpawnPointY + spawnAreaLengthY,
-        new_parts_truck, theseNewDbEntries, getVoxelModel("lofitruck"),
-        stdvoxeldensity, totalParticleIndexTracker,
-        {
-            debugrender: true,
-            entityrole: ALL_ENTITY_ROLES.TRUCKFREEROAM1,   
-            bindunits: 6.0,
-            orientbind: 1.0,
-            allowedspringtypes: STAD.springAllowedTees,
-            reserve_cpu_readbackspot: true,  
-            collision_orbs_mode: "bad",
-            paintjobs:[
-                {input:{r:101,g:99,b:109}, output:{r:214, g: 226, b: 21}},
-            ]
-        }
-    ); 
-    locationsOfTheseNewEntities = locationsOfTheseNewEntities.concat( new_parts_truck );
-
-    // BLUE TRUCK
-    new_parts_truck = [];
-    addVoxelModelApplyOrientersAndBindNearest(
-        middleSpawnPointX - spawnAreaLengthX, 8.0, middleSpawnPointY - spawnAreaLengthY,
-        new_parts_truck, theseNewDbEntries, getVoxelModel("lofitruck"),
-        stdvoxeldensity, totalParticleIndexTracker,
-        {
-            debugrender: true,
-            entityrole: ALL_ENTITY_ROLES.TRUCKBEACHBOY1,   
-            bindunits: 6.0,
-            orientbind: 1.0,
-            allowedspringtypes: STAD.springAllowedTees,
-            reserve_cpu_readbackspot: true,  
-            collision_orbs_mode: "bad",
-            paintjobs:[
-                {input:{r:101,g:99,b:109}, output:{r:14, g: 84, b: 211}},
-            ]
-        }
-    ); 
-    locationsOfTheseNewEntities = locationsOfTheseNewEntities.concat( new_parts_truck );
 
 
 
-    // BEACH BALL
-    let faunalist = [];
-    
-    console.log('ALL_ENTITY_ROLES.DRIFT_BEACHBALL1.ind', ALL_ENTITY_ROLES.DRIFT_BEACHBALL1.ind)
-    
-    // Instantiate beachball to push around
-    STAD["instance_beachball1"] = 
-    addVoxelModelApplyOrientersAndBindNearest(
-        middleSpawnPointX, 10.0, middleSpawnPointY,
-        faunalist, theseNewDbEntries, getVoxelModel("beachball1"),
-        stdvoxeldensity, totalParticleIndexTracker,
-        {
-            debugrender: true,
-            entityrole: ALL_ENTITY_ROLES.DRIFT_BEACHBALL1,      
-            bindunits: 5.0,                                 
-            orientbind: 1.5,                                
-            allowedspringtypes: STAD.springAllowedTees,     
-            reserve_cpu_readbackspot: true,                 
-            collision_orbs_mode: "bad",                      
-            paintjobs:[
-                {input:{r:126,g:103,b:103}, output:{r:50, g: 80, b: 90}},
-                {input:{r:41,g:32,b:99}, output:{r:120, g: 123, b: 42}}
-            ]
-        }
-    );
-    locationsOfTheseNewEntities = locationsOfTheseNewEntities.concat( faunalist );
 
 
 
-    
-    //  ADD
-    //      MISC SIDE CHARACTERS
-    //          =================================================================================================
-    //                          M I S C E L L A N I O U S    M I S C H I E F S
-    //__________________________________________________________________________________
-
-    var newPOintsMantaray = [];
-    console.log('ALL_ENTITY_ROLES.MANTARAY1.ind', ALL_ENTITY_ROLES.MANTARAY1.ind)
-    
-    STAD.instance_mantaray1 = addVoxelModelApplyOrientersAndBindNearest(
-        middleSpawnPointX + 0.0, 6.0, middleSpawnPointY-6.0,
-        newPOintsMantaray, theseNewDbEntries, getVoxelModel("mantaray1"),
-        stdvoxeldensity, totalParticleIndexTracker,
-        {
-            debugrender: true,
-            entityrole: ALL_ENTITY_ROLES.MANTARAY1,     
-            bindunits: 4.0,                                 
-            orientbind: 2,                                  
-            allowedspringtypes: STAD.springAllowedTees,     
-            reserve_cpu_readbackspot: true,                 
-            collision_orbs_mode: "bad"                      
-        }
-    );
-    locationsOfTheseNewEntities = locationsOfTheseNewEntities.concat( newPOintsMantaray );
-
-    
-    var newPointsSTarDestroyer = [];
-    console.log('ALL_ENTITY_ROLES.STARDESTROYER.ind', ALL_ENTITY_ROLES.STARDESTROYER1.ind)
-    
-    STAD.instance_stardestroyer1 = addVoxelModelApplyOrientersAndBindNearest(
-        middleSpawnPointX-2.0, 12.0, middleSpawnPointY + 11.0,
-        newPointsSTarDestroyer, theseNewDbEntries, getVoxelModel("stardestroyer1"),
-        stdvoxeldensity, totalParticleIndexTracker,
-        {
-            debugrender: true,
-            entityrole: ALL_ENTITY_ROLES.STARDESTROYER1,
-            bindunits: 4.0,                                 
-            orientbind: 2.5,                                
-            allowedspringtypes: STAD.springAllowedTees,     
-            reserve_cpu_readbackspot: true,                 
-            collision_orbs_mode: "bad"                      
-        }
-    );
-    locationsOfTheseNewEntities = locationsOfTheseNewEntities.concat( newPointsSTarDestroyer );
 
 
 
-    var newpartsThudnercloud = [];
-    console.log('ALL_ENTITY_ROLES.THUNDERCLOUD1.ind', ALL_ENTITY_ROLES.THUNDERCLOUD1.ind);
-    
-    STAD.instance_thundercloud = addVoxelModelApplyOrientersAndBindNearest(
-        middleSpawnPointX-6.0, 8.0, middleSpawnPointY-4.0,
-        newpartsThudnercloud, theseNewDbEntries, getVoxelModel("thundercloud1"),
-        stdvoxeldensity, totalParticleIndexTracker,
-        {
-            debugrender: true,
-            entityrole: ALL_ENTITY_ROLES.THUNDERCLOUD1,     
-            bindunits: 4.0,                                 
-            orientbind: 1.8,                                
-            allowedspringtypes: STAD.springAllowedTees,     
-            reserve_cpu_readbackspot: true,                 
-            collision_orbs_mode: "bad"                      // all collisino orbs (t=5, r=255,g=120,b=120) which side do they go on
-        }
-    );
-    locationsOfTheseNewEntities = locationsOfTheseNewEntities.concat( newpartsThudnercloud );
 
 
-    
-    //  ADD
-    //      DIRT CARPET PARTICLES
-    //          =================================================================================================
-    //                          D I R T   C A R P E T
-    //__________________________________________________________________________________
 
 
-    var carpetedRain = [];
-    // carpetParticleHelper_InactiveGold( 5 * bucks_pacing, 4.0, 5 * bucks_pacing, // top left start location (x, and z increases)
-    //     200, 0.13*bucks_pacing, // how many and the spacing 
-    //     carpetedRain, totalParticleIndexTracker // objects that get changed in this function
-    // );
-    var bottomMudMeta = carpetParticleHelper_BottomMud( middleSpawnPointX, 1.3, middleSpawnPointY, // top left start location (x, and z increases)
-        spawnAreaLengthX*3, spawnAreaLengthY*3, // the are covered by
-        200,  // how many  
-        carpetedRain, totalParticleIndexTracker, // objects that get changed in this function
-        EZWG.SHA1// random object
-    );
-    locationsOfTheseNewEntities = locationsOfTheseNewEntities.concat( carpetedRain );
-
-    
 
 
 
@@ -1157,6 +478,44 @@ function returnAllStructures() {
     // );
 
 
+    
+    var START_OF_ALL_TEAL_PARTICLES = 0 + totalParticleIndexTracker.totaldbs;
+
+    for(let teaa = 0;teaa < totalParticleIndexTracker.allTheTealParticles.length;teaa++){
+        theseNewDbEntries[totalParticleIndexTracker.totaldbs + 0] = totalParticleIndexTracker.allTheTealParticles[teaa];
+        totalParticleIndexTracker.totaldbs += 1;
+    }
+
+
+
+    
+    var START_OF_SPECIAL_PARTICLES = 0 + totalParticleIndexTracker.totaldbs;
+    
+    // Add the custom custom_movement_rules
+    let cust_rules_to_add = [];
+    var uncompressedInd = 0;
+    for(let ff = 0;ff < entity_role_templates.length;ff++){
+
+        let stacksOfColoursAndModes = entity_role_templates[ff].custom_movement_rules ? entity_role_templates[ff].custom_movement_rules: [];
+        //cust_rules_to_add.push( totalParticleIndexTracker.totaldbs );
+        cust_rules_to_add.push( uncompressedInd )
+
+        for(let hh = 0;hh < stacksOfColoursAndModes.length;hh++){
+
+            theseNewDbEntries[totalParticleIndexTracker.totaldbs + 0] = stacksOfColoursAndModes[hh].identifying_colour.r;
+            theseNewDbEntries[totalParticleIndexTracker.totaldbs + 1] = stacksOfColoursAndModes[hh].identifying_colour.g;
+            theseNewDbEntries[totalParticleIndexTracker.totaldbs + 2] = stacksOfColoursAndModes[hh].identifying_colour.b;
+            theseNewDbEntries[totalParticleIndexTracker.totaldbs + 3] = stacksOfColoursAndModes[hh].mode;
+
+            totalParticleIndexTracker.totaldbs += STAD.SPECIAL_COLOUR_INSTRUCTIONS_SIZE;
+            uncompressedInd++;
+        }
+        
+
+    }
+
+
+
 
 
     var START_OF_ENT_ROLES_IN_DB = 0 + totalParticleIndexTracker.totaldbs;
@@ -1173,10 +532,17 @@ function returnAllStructures() {
         theseNewDbEntries[totalParticleIndexTracker.totaldbs + 8] = entity_role_templates[ff].top_bottom_mass_ratio;
         theseNewDbEntries[totalParticleIndexTracker.totaldbs + 9] = entity_role_templates[ff].rotation_engine;
 
-        theseNewDbEntries[totalParticleIndexTracker.totaldbs + 10] = isNaN(entity_role_templates[ff].behaviour_type)?0:entity_role_templates[ff].behaviour_type;
-        theseNewDbEntries[totalParticleIndexTracker.totaldbs + 11] = isNaN(entity_role_templates[ff].max_sight_range)?0:entity_role_templates[ff].max_sight_range;
-        theseNewDbEntries[totalParticleIndexTracker.totaldbs + 12] = isNaN(entity_role_templates[ff].idle_activity)?0:entity_role_templates[ff].idle_activity;
-        theseNewDbEntries[totalParticleIndexTracker.totaldbs + 13] = isNaN(entity_role_templates[ff].max_attack_range)?0:entity_role_templates[ff].max_attack_range;
+        theseNewDbEntries[totalParticleIndexTracker.totaldbs + 10] = isNaN(entity_role_templates[ff].behaviour_type)    ?0:entity_role_templates[ff].behaviour_type;
+        theseNewDbEntries[totalParticleIndexTracker.totaldbs + 11] = isNaN(entity_role_templates[ff].max_sight_range)   ?0:entity_role_templates[ff].max_sight_range;
+        theseNewDbEntries[totalParticleIndexTracker.totaldbs + 12] = isNaN(entity_role_templates[ff].idle_activity)     ?0:entity_role_templates[ff].idle_activity;
+        theseNewDbEntries[totalParticleIndexTracker.totaldbs + 13] = isNaN(entity_role_templates[ff].max_attack_range)  ?0:entity_role_templates[ff].max_attack_range;
+
+        theseNewDbEntries[totalParticleIndexTracker.totaldbs + 14] = isNaN(entity_role_templates[ff].voxel_sizer)?1.0:entity_role_templates[ff].voxel_sizer;
+
+        theseNewDbEntries[totalParticleIndexTracker.totaldbs + 15] = entity_role_templates[ff].custom_movement_rules ? entity_role_templates[ff].custom_movement_rules.length : 0;
+        theseNewDbEntries[totalParticleIndexTracker.totaldbs + 16] = cust_rules_to_add[ff];
+
+        theseNewDbEntries[totalParticleIndexTracker.totaldbs + 17] =  isNaN(cust_rules_to_add[ff].wants_entity_role) ? -1: cust_rules_to_add[ff].wants_entity_role;
 
         // This is the DB RN
         // console.log(theseNewDbEntries[totalParticleIndexTracker.totaldbs + 0]);
@@ -1193,7 +559,7 @@ function returnAllStructures() {
  
  
     // AT THE END OF THE POINTS ARRAY, add all the things together 
-    var TOTAL_PARTICLE_COUNT = newBucketParticles.length + groundParticlesReservedForDeco.length + locationsOfTheseNewEntities.length;
+    var TOTAL_PARTICLE_COUNT = newBucketParticles.length +  STAD.locationsOfTheseNewEntities.length;
  
     var listersMemSpace = maxLists*SIZE_LISTS_entry_size; 
 
@@ -1279,18 +645,18 @@ function returnAllStructures() {
     let springIndTracker = 0;
     console.log('START_LISTS is now', START_LISTS);
 
-    for (let i = 0; i < locationsOfTheseNewEntities.length; i++) {
-        for (let j = 0; j < locationsOfTheseNewEntities[i].springList.length; j++) {
-            let pt = locationsOfTheseNewEntities[i].springList[j];
+    for (let i = 0; i < STAD.locationsOfTheseNewEntities.length; i++) {
+        for (let j = 0; j < STAD.locationsOfTheseNewEntities[i].springList.length; j++) {
+            let pt = STAD.locationsOfTheseNewEntities[i].springList[j];
             RAW_POINTS[START_LISTS + (springIndTracker*SIZE_LISTS_entry_size) + 0] = Math.floor(pt.to);
             RAW_POINTS[START_LISTS + (springIndTracker*SIZE_LISTS_entry_size) + 1] = pt.rest;
             RAW_POINTS[START_LISTS + (springIndTracker*SIZE_LISTS_entry_size) + 2] = pt.strength;
 
             if( j === 0){
-                locationsOfTheseNewEntities[i].meta1 = springIndTracker+1;// add one so you know it's active, then when using this value in the shader one is simply subtracted off
-                locationsOfTheseNewEntities[i].meta1p =springIndTracker+1;// add one so you know it's active, then when using this value in the shader one is simply subtracted off
-                locationsOfTheseNewEntities[i].meta2 = locationsOfTheseNewEntities[i].springList.length;
-                locationsOfTheseNewEntities[i].meta2p =locationsOfTheseNewEntities[i].springList.length; 
+                STAD.locationsOfTheseNewEntities[i].meta1 = springIndTracker+1;// add one so you know it's active, then when using this value in the shader one is simply subtracted off
+                STAD.locationsOfTheseNewEntities[i].meta1p =springIndTracker+1;// add one so you know it's active, then when using this value in the shader one is simply subtracted off
+                STAD.locationsOfTheseNewEntities[i].meta2 = STAD.locationsOfTheseNewEntities[i].springList.length;
+                STAD.locationsOfTheseNewEntities[i].meta2p =STAD.locationsOfTheseNewEntities[i].springList.length; 
             }
 
             springIndTracker += 1;//SIZE_LISTS_entry_size;
@@ -1298,33 +664,33 @@ function returnAllStructures() {
 
         
         // INSTALL the collision ball IDs
-        if( locationsOfTheseNewEntities[i].t === 2 || 
-            locationsOfTheseNewEntities[i].t === 4 ||
-            (locationsOfTheseNewEntities[i].t >= 6 && locationsOfTheseNewEntities[i].t <= 12 ) ){
+        if( STAD.locationsOfTheseNewEntities[i].t === 2 || 
+            STAD.locationsOfTheseNewEntities[i].t === 4 ||
+            (STAD.locationsOfTheseNewEntities[i].t >= 6 && STAD.locationsOfTheseNewEntities[i].t <= 12 ) ){
             
-            locationsOfTheseNewEntities[i].meta7 = locationsOfTheseNewEntities[i].currclosestcollball;
-            locationsOfTheseNewEntities[i].meta7p = locationsOfTheseNewEntities[i].currclosestcollball;
+            STAD.locationsOfTheseNewEntities[i].meta7 = STAD.locationsOfTheseNewEntities[i].currclosestcollball;
+            STAD.locationsOfTheseNewEntities[i].meta7p = STAD.locationsOfTheseNewEntities[i].currclosestcollball;
 
             // console.log('ok one found at ', i)
-            // console.log(locationsOfTheseNewEntities[i].sectionIndexOneDBEntry)
+            // console.log(STAD.locationsOfTheseNewEntities[i].sectionIndexOneDBEntry)
         }
         
-        // if(locationsOfTheseNewEntities[i].t === 6){
+        // if(STAD.locationsOfTheseNewEntities[i].t === 6){
         //     console.log('ok one found at ', i)
-        //     console.log(locationsOfTheseNewEntities[i].sectionIndexOneDBEntry)
+        //     console.log(STAD.locationsOfTheseNewEntities[i].sectionIndexOneDBEntry)
         // }
 
-        locationsOfTheseNewEntities[i].meta3 = locationsOfTheseNewEntities[i].sectionIndexOneDBEntry;
-        locationsOfTheseNewEntities[i].meta3p = locationsOfTheseNewEntities[i].sectionIndexOneDBEntry;
+        STAD.locationsOfTheseNewEntities[i].meta3 = STAD.locationsOfTheseNewEntities[i].sectionIndexOneDBEntry;
+        STAD.locationsOfTheseNewEntities[i].meta3p = STAD.locationsOfTheseNewEntities[i].sectionIndexOneDBEntry;
 
-        locationsOfTheseNewEntities[i].meta4 = locationsOfTheseNewEntities[i].desiredR;
-        locationsOfTheseNewEntities[i].meta4p = locationsOfTheseNewEntities[i].desiredR;
+        STAD.locationsOfTheseNewEntities[i].meta4 = STAD.locationsOfTheseNewEntities[i].desiredR;
+        STAD.locationsOfTheseNewEntities[i].meta4p = STAD.locationsOfTheseNewEntities[i].desiredR;
 
-        locationsOfTheseNewEntities[i].meta5 = locationsOfTheseNewEntities[i].desiredG;
-        locationsOfTheseNewEntities[i].meta5p = locationsOfTheseNewEntities[i].desiredG;
+        STAD.locationsOfTheseNewEntities[i].meta5 = STAD.locationsOfTheseNewEntities[i].desiredG;
+        STAD.locationsOfTheseNewEntities[i].meta5p = STAD.locationsOfTheseNewEntities[i].desiredG;
         
-        locationsOfTheseNewEntities[i].meta6 = locationsOfTheseNewEntities[i].desiredB;
-        locationsOfTheseNewEntities[i].meta6p = locationsOfTheseNewEntities[i].desiredB;
+        STAD.locationsOfTheseNewEntities[i].meta6 = STAD.locationsOfTheseNewEntities[i].desiredB;
+        STAD.locationsOfTheseNewEntities[i].meta6p = STAD.locationsOfTheseNewEntities[i].desiredB;
 
 
     }
@@ -1332,7 +698,7 @@ function returnAllStructures() {
 
 
 
-    var finalConcatedPointArray = newBucketParticles.concat(groundParticlesReservedForDeco.concat(locationsOfTheseNewEntities));
+    var finalConcatedPointArray = newBucketParticles.concat( STAD.locationsOfTheseNewEntities );
 
     // -------------------------------------------------------
     // 5) Pack final data into RAW_POINTS
@@ -1434,6 +800,10 @@ function returnAllStructures() {
     
     //console.log('all live:', allActiveSprings, ' |  all dead:', allDeactiveSprings)
 
+    if(!STAD.bottomMudMeta){
+        STAD.bottomMudMeta = {start: 0, size: 0};
+    }
+
     return {
         totalParticleCount: maxParticles,
         oneParticleSize:    entityTemplateSize,
@@ -1450,6 +820,7 @@ function returnAllStructures() {
         SIZE_LISTS_entry_size,
         entityUpdateSweepCycle,
         STD_GRAV: STAD.STD_GRAV,
+        STD_BUBL: STAD.STD_BUBL,
         START_DB,
         MAX_COLLIDABLES,
         MAX_COLL_GOOD_GUYS,
@@ -1464,6 +835,9 @@ function returnAllStructures() {
         START_OF_SPAWN_Y: startOfRandoSquareY,
         SPAWN_SIZE_X: spawnAreaLengthX,
         SPAWN_SIZE_Y: spawnAreaLengthY,
+
+        MIDDLE_SPAWN_X: middleSpawnPointX,
+        MIDDLE_SPAWN_Y: middleSpawnPointY,
 
         ENT_SCRATCH_PAD_SIZE: STAD.ENT_SCRATCH_PAD_SIZE,
         currentgood: totalParticleIndexTracker.goodguys,
@@ -1481,7 +855,17 @@ function returnAllStructures() {
         WEAPONS_REGISTERED: totalParticleIndexTracker.weaponsind,
         START_OF_WEAPONS,
 
-        MUD_START: bottomMudMeta.start,
-        MUD_SIZE: bottomMudMeta.size,
+        MUD_START: STAD.bottomMudMeta.start,
+        MUD_SIZE: STAD.bottomMudMeta.size,
+
+        SCENARIO_TYPE,  //"soloarcade"
+
+        SCENARIO_STARTER_NUMBER, // can be -1 if title screen or 0,1,2,3,4,5,6,7
+
+        START_OF_SPECIAL_PARTICLES,    // start of db ind where the values are
+        SPECIAL_COLOUR_INSTRUCTIONS_SIZE: STAD.SPECIAL_COLOUR_INSTRUCTIONS_SIZE,
+
+        START_OF_ALL_TEAL_PARTICLES,
+        TOTAL_TEAL_PARTICLES: totalParticleIndexTracker.allTheTealParticles.length,
     };
 }

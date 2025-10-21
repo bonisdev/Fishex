@@ -157,16 +157,17 @@ function createParticle( xxx, yyy, zzz, idd ){
         // Type 19 = Explosion (Weapon) (All Particles)
         // Type 20 = Laser (Weapon) (All Particles)
         // Type 21 = Air floating particle (usually part of a reserved particle weapons system) (from 19 and 20?)
-            //m1:   Spr loc ind
-            //m2:   Sprz size
-            //m3:   the teal block id   (Type 13: entity ind in the db(+1'd))     <- -- | (also,t14,t15,t16,t17,t18,t19,t20,t21<-tealblock)
-            //m4:   desired col R           t20 x direction laser|   <- *gets changed (if springs get deactivaed) |t19=id target(+1'd)   
+        // Type 22 = Bubble collection (LIKE t = 15) (of 5 or 10 that coordinate w each other to float up...)
+            //m1:   Spr loc ind         t20 = laser IDK yet exactly??
+            //m2:   Sprz size           t20 = laser armed =0, on = 1
+            //m3:   the teal block id   (Type 13: entity ind in the db(+1'd))     <- -- | (also,t14,t15,t16,t17,t18,t19,t20,t21,t22<-tealblock)
+            //m4:   desired col R           t20 x direction laser|   <- *gets changed (if springs get deactivaed) |t19=id target(+1'd)   t13=live update target chaser
             //m5:   desired col G           t20 y direction laser   |                                               t19=explos radius   
-            //m6:   desired col B      t20 z direction laser |   (Type 19=0 = off. 1 = armed and traveling) 
+            //m6:   desired col B      t20 z direction laser |   (Type 19=0 = off. 1 = armed and traveling)                             
             //m7:       (t2,4,6-12)CollBallClosestProblemID | (t5) RADIUS of the collision thing
-            //          Type13=EntityRole  | (t14)TypeOfParticleToTurnInto...  t15, t16, t17, t18, t19, t20, t21 = CounterTimerUpwards
+            //          Type13=EntityRole  | (t14)TypeOfParticleToTurnInto...  t15, t16, t17, t18, t19, t20, t21 = CounterTimerUpwards, t22?
             //m8:       (t5: index 1'd closest other coll ball particle )  | (type 12/13:)  scratchpad ind (+1'd)
-            //          (t14 & t15 t16,t17,t18,t19, t20, t21)?the reserve particle group (0,1,2,3 ...)  on this entity role...    ??>Nothing = 
+            //          (t14 & t15 t16,t17,t18,t19, t20, t21, t22)?the reserve particle group (0,1,2,3 ...)  on this entity role...    ??>Nothing = 
             //                                                                          |
             //                                                                          |
             //                                                                          |
@@ -393,7 +394,7 @@ function addTheSprings_orie( locationsOfTheseNewEntities, spacingss, totParticle
     return springsForThisEnt.length;
 }
 function addTheSprings_std( locationsOfTheseNewEntities, spacingss, unitforvoxelspacing, orientcontrolradius, 
-    centerNucleausParticle, indOfTealParticle, allowspringtypes, totParticleIndTrackr, listOfOrienterParticles, listOfCollisionParticles ){
+    centerNucleausParticle, indOfTealParticle, allowspringtypes, springpowermod, totParticleIndTrackr, listOfOrienterParticles, listOfCollisionParticles ){
     
     // S P R I N G S + + + + + +
 
@@ -431,6 +432,7 @@ function addTheSprings_std( locationsOfTheseNewEntities, spacingss, unitforvoxel
 
     // ^^^ APPLY THESE
     let meta_val_highest_spring_count = 0;
+    let totalspringseverforthis = 0;
     
     for(let i = 0;i < locationsOfTheseNewEntities.length;i++){
 
@@ -463,7 +465,7 @@ function addTheSprings_std( locationsOfTheseNewEntities, spacingss, unitforvoxel
 
                 if( i !== j ){
                     if( (distem >= 0.00001) && (distem <= spacingss) ){
-                        let nuspring = createSpring( locationsOfTheseNewEntities[j].id, distem, 1 );
+                        let nuspring = createSpring( locationsOfTheseNewEntities[j].id, distem, springpowermod );
                         springsForThisEnt.push( nuspring );
                         locationsOfTheseNewEntities[i].springList.push(nuspring);
                         totParticleIndTrackr.exsprcnt++;
@@ -487,6 +489,7 @@ function addTheSprings_std( locationsOfTheseNewEntities, spacingss, unitforvoxel
             meta_val_highest_spring_count = springsForThisEnt.length;
         }
 
+        totalspringseverforthis += springsForThisEnt.length;
 
 
 
@@ -641,6 +644,8 @@ function addTheSprings_std( locationsOfTheseNewEntities, spacingss, unitforvoxel
 
 
     console.log('HIGHEST SPRING COUNT FOR ONE PARTICLE: ', meta_val_highest_spring_count );
+    console.log('srpings:', totalspringseverforthis);
+    console.log('particles:', locationsOfTheseNewEntities.length)
 
 
 }
@@ -817,7 +822,7 @@ function reserveSomeParticlesHelper( xx, yy, zz, nucleusParticleId, listofnupart
         nuPoint.desiredG = 255;//meta5
         nuPoint.desiredB = 255;//meta6
 
-        if( r > 0 ){ 
+        if( r > 0 ){
             // if it's not the tip of the thing that has the logic,  
             // it's like the meat of the particles (the smoke pluum)
             nuPoint.meta7 = smolkpartile;
@@ -827,6 +832,10 @@ function reserveSomeParticlesHelper( xx, yy, zz, nucleusParticleId, listofnupart
             // What to turn into if this dormant particle is activated
             nuPoint.meta7 = typeoparticle;
             nuPoint.meta7p = typeoparticle;
+
+            if( typeoparticle === 20){// if laser make sure armed is 0
+                //nuPoint.met/
+            }
         }
 
         // The index (0,1,2,3 ...) of the reserve group on this entity role
@@ -913,7 +922,7 @@ function calculateSpiralCoordinates(index, radius) {
 
     return { x, y };
 }
-
+// mud Mud MUD muD
 function carpetParticleHelper_BottomMud( xx, yy, zz, thewidth, theheight, perim, listofnuparts, totParticleIndTrackr, randobj ){
 
     let basebrown = [139,69,19];
@@ -937,7 +946,7 @@ function carpetParticleHelper_BottomMud( xx, yy, zz, thewidth, theheight, perim,
         for( let ry = 0;ry < perim;ry++){
             trakc++;
 
-            let cor = calculateSpiralCoordinates( trakc, 0.06, )
+            let cor = calculateSpiralCoordinates( trakc, 0.13, )
 
             let xxx =  cor.x;//rx*spcin - thewidth/2; 
             let yyy = 0;//5 + Math.random() * 2;
@@ -1011,7 +1020,11 @@ function addVoxelModelApplyOrientersAndBindNearest( x, y, z, locationsOfTheseNew
     var centerNucleausParticle = 0; // (the teal colour: 0, 255, 255)
     var indOfTealParticle = -1;     // ind of teal colour in the 
 
-    
+    if( isNaN(rendm.springpowermod) ){
+        rendm.springpowermod = 1;
+    }
+
+    var restricted_spring_rules = rendm.restricted_spring_rules ? rendm.restricted_spring_rules : [];
 
 
     let debugshow = rendm.debugrender?true:false;
@@ -1029,6 +1042,8 @@ function addVoxelModelApplyOrientersAndBindNearest( x, y, z, locationsOfTheseNew
 
     let entity_role = isNaN(rendm.entityrole.ind)?0:rendm.entityrole.ind;   // 0 is none, 1 is car, 2 is.. enemy?
 
+    let xyzmover = rendm.xyzmover ? rendm.xyzmover : (x,y,z) => { return {x,y,z}; };
+
         let weapon_registration_slots = []; // this grows and gets returned
     let reserved_particles = rendm.entityrole.reserved_particles;// must always be legit
     if( isNaN( reserved_particles.length) ){ throw new Error("incorrecrt reserd_particles length???");}
@@ -1037,6 +1052,10 @@ function addVoxelModelApplyOrientersAndBindNearest( x, y, z, locationsOfTheseNew
                                                             // in the DB to change to store the indices where the reserved particles 
     
     //rendm.allowedspringtypes 
+
+    // SPECIAL PARTICLES colours that get special movmeent rules 
+    let special_particle_colours = rendm.entityrole.custom_movement_rules ? rendm.entityrole.custom_movement_rules: [];
+
 
     let min_xmetrix = 99999;
     let max_xmetrix = -99999;
@@ -1065,9 +1084,16 @@ function addVoxelModelApplyOrientersAndBindNearest( x, y, z, locationsOfTheseNew
     // All the controller entities that could possibly
     // be indexed in the collision buckets
     for (let i = 0; i < voxelObj.particles.length; i++) {
-        let xPos = (voxelObj.particles[i].x - shiftspacex) * voxelspacings;
+        let xPos = (shiftspacex - voxelObj.particles[i].x) * voxelspacings;
         let yPos = (voxelObj.particles[i].z - shiftspacey) * voxelspacings;
         let zPos = (voxelObj.particles[i].y - shiftspacez) * voxelspacings;
+
+        let nupositionfortrans = xyzmover(xPos, yPos, zPos);
+
+        xPos = nupositionfortrans.x;
+        yPos = nupositionfortrans.y;
+        zPos = nupositionfortrans.z;
+
         xPos += x ;
         yPos += y ;
         zPos += z ;
@@ -1123,6 +1149,8 @@ function addVoxelModelApplyOrientersAndBindNearest( x, y, z, locationsOfTheseNew
         else if( voxelObj.particles[i].r === 0 && voxelObj.particles[i].g === 255 && voxelObj.particles[i].b === 255 ){
             centerNucleausParticle = totParticleIndTrackr.val + 1;// (PLUS ONED HERE, CARRIES THROUGHOUT THE WHOLE THING)
             indOfTealParticle = locationsOfTheseNewEntities.length - 1;// get the last point u added
+
+            totParticleIndTrackr.allTheTealParticles.push(  totParticleIndTrackr.val  );// ADD to the list of searchable teals 
             
             // Engineering double check
             if( !(orpartids[6] < 0) ) throw new Error('more than 1 of this orienter block: ' + orpartids[6]);
@@ -1175,7 +1203,7 @@ function addVoxelModelApplyOrientersAndBindNearest( x, y, z, locationsOfTheseNew
             locationsOfTheseNewEntities[ locationsOfTheseNewEntities.length-1 ].tp = 9;  // THE FIRST INITIAL SETTER FOR THE BOTTOM
         }
         // Left
-        else if( voxelObj.particles[i].r === 255 && voxelObj.particles[i].g === 0 && voxelObj.particles[i].b === 255 ){
+        else if( voxelObj.particles[i].r === 255 && voxelObj.particles[i].g === 127 && voxelObj.particles[i].b === 0 ){
             orienterParticleIds[4] = totParticleIndTrackr.val + 1;
             
             // Engineering double check
@@ -1185,7 +1213,7 @@ function addVoxelModelApplyOrientersAndBindNearest( x, y, z, locationsOfTheseNew
             locationsOfTheseNewEntities[ locationsOfTheseNewEntities.length-1 ].tp = 10;  // THE FIRST INITIAL SETTER FOR THE LEFT
         }
         // Right
-        else if( voxelObj.particles[i].r === 255 && voxelObj.particles[i].g === 127 && voxelObj.particles[i].b === 0 ){
+        else if( voxelObj.particles[i].r === 255 && voxelObj.particles[i].g === 0 && voxelObj.particles[i].b === 255 ){
             orienterParticleIds[5] = totParticleIndTrackr.val + 1;
             
             // Engineering double check
@@ -1339,7 +1367,7 @@ function addVoxelModelApplyOrientersAndBindNearest( x, y, z, locationsOfTheseNew
     // centerNucleausParticle the id of the center particle
 
     addTheSprings_std(locationsOfTheseNewEntities, voxelspacings*bindunits, voxelspacings, voxelspacings*orientinunits, 
-        centerNucleausParticle, indOfTealParticle, rendm.allowedspringtypes, 
+        centerNucleausParticle, indOfTealParticle, rendm.allowedspringtypes, rendm.springpowermod, 
         totParticleIndTrackr, 
         orpartids,//orienterParticleIds <- these are just the particle ids not their location in inded like orpartids is 
         collShrinkWrapInds// list of collision balls becuase the pain job needs to be done on them too 

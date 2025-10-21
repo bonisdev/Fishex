@@ -961,18 +961,36 @@ class EZWG {
             }
 
 
-            fn EZ_BETTER_RAND(seed_f32: f32) -> f32 {
-                var x: u32 = abs(u32(seed_f32 * 43758.5453)) ^ 0xA5A5A5A5u;
+            // fn EZ_BETTER_RAND(seed_f32: f32) -> f32 {
+            //     var x: u32 = abs(u32(seed_f32 * 43758.5453)) ^ 0xA5A5A5A5u;
 
-                // 4 rounds of bit scramblers
+            //     // 4 rounds of bit scramblers
+            //     x ^= (x >> 17u);
+            //     x *= 0x85ebca6bu;
+            //     x ^= (x >> 11u);
+            //     x *= 0xc2b2ae35u;
+            //     x ^= (x >> 15u);
+
+            //     // Map to [0, 1)
+            //     return f32(x & 0x00FFFFFFu) / f32(0x01000000u);
+            // }
+
+            fn EZ_BETTER_RAND(seed_f32: f32) -> f32 {
+                // 1) fold into [0,1)
+                let s = fract(seed_f32);
+
+                // 2) expand to full u32 range
+                var x: u32 = u32(s * 4294967296.0);
+
+                // 3) bit‑scramble (xorshift + 32‑bit mix)
                 x ^= (x >> 17u);
                 x *= 0x85ebca6bu;
                 x ^= (x >> 11u);
                 x *= 0xc2b2ae35u;
                 x ^= (x >> 15u);
 
-                // Map to [0, 1)
-                return f32(x & 0x00FFFFFFu) / f32(0x01000000u);
+                // 4) map back to [0,1)
+                return f32(x) / 4294967296.0;
             }
 
 

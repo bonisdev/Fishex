@@ -11,6 +11,7 @@ const canvas = document.getElementById('gpuCanvas');
 
 var MSTIME = 22;
 var READBACKFREQ = 1;
+var INPUTUPDATEFREQ = 30;// every 30 frames update the user inputs to the compute shader
 var STEPCOUNT = 0;
 var FINAL_POINT_DATA = returnAllStructures(); // Your scenario data
 
@@ -31,6 +32,18 @@ var DEBUG_VISUALS = false;// show the xyz axis n stuff
 
 var CURR_CAM_MODE = -1;// FREE CAM is negative 1 or any of the read-backable 
 
+var CURR_SELECTED_ZOOM = 23.0;// how far in to zoom
+
+var CURR_TOOL_SELECTED = 0;// 0 is fish lasso, 1 is fish blaster, 2 is fish missile
+
+var isDragging = false;
+var startPos = { x: 0, y: 0 };
+var dragVector = { x: 0, y: 0 };
+
+var camdragvelx = 0;
+var camdragvel2x = 0;
+var camdragvely = 0;
+
 var CURR_TARGET_MODE = 0;   // 0 = not targeting, 1 = targeting 
 var CURR_TARGET_ID_1plus = 0;     // current target to look at (0 means no highlihg)
 
@@ -45,6 +58,7 @@ var SFX_COUNT_1 = 0;
 
 var LAST_VEL_FROM_KEY_PROTAGONIST = {x: 0, y: 0, z: 0};// distance the main character is from the center
 var CLOSEST_ENT_ID = 0;    // the id of the currently targeted ent (by the cpu)
+var CLOSEST_ENT_HOVERED_OVER_ID = 0;    // the id of the currently hovered over (by the cpu)
 
 var userKeySpace = false;
 var userKeyShift = false;   // ^ tilters up n down
@@ -61,7 +75,7 @@ var SIM_META = {
 
 // Camera
 const camera = {
-    position: [FINAL_POINT_DATA.BUCKET_SPACING*FINAL_POINT_DATA.bucketsPerimeter/2, 15, 2],
+    position: [FINAL_POINT_DATA.BUCKET_SPACING*FINAL_POINT_DATA.bucketsPerimeter/2, 9, 6],
     rotation: [0.44, Math.PI],
     speed: 0.28,
     sensitivity: 0.028,
@@ -135,21 +149,41 @@ function animateOverlayOut() {
     }, 500);
 }
 
+function lookForMainProtagonistAndSet(){
+    camera.useTarget = true;
+    CURR_CAM_MODE = (CURR_CAM_MODE + 1) % FINAL_POINT_DATA.TOTAL_READBACKS;
+
+    // Just set it to the main character
+    for(let b = 0;b < ALL_READABLE_ENTS.length;b++){
+        if( ALL_READABLE_ENTS[b].i === FINAL_POINT_DATA.KEY_PROTAGONIST ){
+            CURR_CAM_MODE = b;
+            b = ALL_READABLE_ENTS.length;
+        }
+    }
+}
+
 // Keyboard listeners
 function onKeyDown(e) {
     const key = e.key.toLowerCase(); // Convert key to lowercase
+
+    if( key === 'q' && false){
+        CURR_TOOL_SELECTED = (CURR_TOOL_SELECTED+1) % 3;
+
+        let tabenur = document.getElementById("fishToolIndicator");
+
+        tabenur.innerHTML = `
+            <span style="${CURR_TOOL_SELECTED===0?`color:red;`:``}">Fish Lasso</span>
+            <br>
+            <span style="${CURR_TOOL_SELECTED===1?`color:red;`:``}">Fish Missile</span>
+            <br>
+            <span style="${CURR_TOOL_SELECTED===2?`color:red;`:``}">Fish Blaster</span> 
+        `;
+        //cycleCarousel();
+            
+    }
     
     if (key === 'm') {
-        camera.useTarget = true;
-        CURR_CAM_MODE = (CURR_CAM_MODE + 1) % FINAL_POINT_DATA.TOTAL_READBACKS;
-
-        // Just set it to the main character
-        for(let b = 0;b < ALL_READABLE_ENTS.length;b++){
-            if( ALL_READABLE_ENTS[b].i === FINAL_POINT_DATA.KEY_PROTAGONIST ){
-                CURR_CAM_MODE = b;
-                b = ALL_READABLE_ENTS.length;
-            }
-        }
+        lookForMainProtagonistAndSet();
     }
     if (key === 'b') {
         camera.useTarget = false;
@@ -227,17 +261,155 @@ function onResize() {
     recreateDepthTexture();
 }
 
+// Add scroll handler function
+function onScroll(event) {
+    // Prevent default scroll behavior if needed
+    // event.preventDefault();
+    
+    // Positive scroll (down/away) is positive deltaY
+    // Negative scroll (up/toward) is negative deltaY
+    const scrollDirection = event.deltaY > 0 ? 'positive' : 'negative';
+    
+    // Handle scroll based on direction
+    if (scrollDirection === 'positive') {
+        CURR_SELECTED_ZOOM += 2.1;
+    } else {
+        if( CURR_SELECTED_ZOOM > FINAL_POINT_DATA.BUCKET_SPACING*7){
+            CURR_SELECTED_ZOOM -= 2.1;
+        }
+    }
+}
+
+// Mouse down handler to start drag
+function onMouseDown(event) {
+    // Check for right mouse button (button 2)
+    if (event.button === 2) {
+        isDragging = true;
+        startPos = { x: event.clientX, y: event.clientY };
+        dragVector = { x: 0, y: 0 }; // Reset drag vector
+        //console.log('Right-click drag started');
+    }
+
+    // — left-click: cast a ray and pick closest entity —
+    if (event.button === 0) {
+        CLOSEST_ENT_ID = CLOSEST_ENT_HOVERED_OVER_ID;
+    }
+
+
+}
+
+// Mouse move handler to calculate drag vector
+function onMouseMove(event) {
+    if (isDragging && startPos) {
+        // Calculate the 2D vector from start to current position
+        dragVector = {
+            x: event.clientX - startPos.x,
+            y: event.clientY - startPos.y
+        };
+        //console.log('Drag vector:', dragVector);
+        // Optionally update startPos for continuous dragging
+        // startPos = { x: event.clientX, y: event.clientY };
+    }
+    // Not moving the camera around
+    if(FINAL_POINT_DATA && ALL_READABLE_ENTS){
+        // 1) get NDC coords
+        const rect = canvas.getBoundingClientRect();
+        const mx = event.clientX - rect.left;
+        const my = event.clientY - rect.top;
+        const ndcX =  2 * mx / canvas.width  - 1;
+        const ndcY =  1 - 2 * my / canvas.height;
+
+        // 2) get & invert VP
+        const vp = createViewProjectionMatrix(
+            canvas.width / canvas.height,
+            Math.PI/4, 0.1, 100,
+            camera.position,
+            camera.rotation
+        );
+        const invVP = invertMat4(vp);
+        if (!invVP) return;
+
+        // 3) unproject near/far
+        const nearP4 = mulMat4Vec4(invVP, [ndcX, ndcY, -1, 1]);
+        const farP4  = mulMat4Vec4(invVP, [ndcX, ndcY,  1, 1]);
+        const near = [ nearP4[0]/nearP4[3], nearP4[1]/nearP4[3], nearP4[2]/nearP4[3] ];
+        const far  = [ farP4[0]/farP4[3],   farP4[1]/farP4[3],   farP4[2]/farP4[3]   ];
+
+        // 4) ray origin & normalized dir
+        const rayOrigin = near;
+        const rayDir = normalize3([
+            far[0] - near[0],
+            far[1] - near[1],
+            far[2] - near[2],
+        ]);
+
+        // 5) find closest entity
+        let closest = null, bestDist = Infinity;
+        for (const ent of ALL_READABLE_ENTS) {
+            if( !ent) return;
+            const toEnt = [
+                ent.x - rayOrigin[0],
+                ent.y - rayOrigin[1],
+                ent.z - rayOrigin[2],
+            ];
+            const t = dot3(toEnt, rayDir);
+            if (t < 0) continue; // behind camera
+            // closest point on ray
+            const cp = [
+                rayOrigin[0] + rayDir[0]*t,
+                rayOrigin[1] + rayDir[1]*t,
+                rayOrigin[2] + rayDir[2]*t,
+            ];
+            // distance from ent to that point
+            const dx = ent.x - cp[0],
+                    dy = ent.y - cp[1],
+                    dz = ent.z - cp[2];
+            const dist = Math.hypot(dx, dy, dz);
+            if( ent.i !== FINAL_POINT_DATA.KEY_PROTAGONIST ){
+                if (dist < bestDist && dist < FINAL_POINT_DATA.BUCKET_SPACING*3) {
+                    bestDist = dist;
+                    closest = ent;
+                }
+            }
+        }
+
+        if (closest) {
+            //CLOSEST_ENT_ID = 
+            CLOSEST_ENT_HOVERED_OVER_ID = closest.i + 1;
+            //console.log('Picked:', closest, 'distance:', bestDist);
+        } 
+        else {
+            CLOSEST_ENT_HOVERED_OVER_ID = 0;
+            //CLOSEST_ENT_ID = 0;
+        }
+    }
+}
+
+// Mouse up handler to stop drag
+function onMouseUp(event) {
+    // Check for right mouse button (button 2)
+    if (event.button === 2) {
+        isDragging = false;
+        // console.log('Right-click drag ended, final vector:', dragVector);
+    }
+}
+
 // --- Setup Functions ---
 
 // Modify setupInputHandlers to use the named functions:
 function setupInputHandlers() {
     window.addEventListener('keydown', onKeyDown);
     window.addEventListener('keyup', onKeyUp);
+    window.addEventListener('resize', onResize);
+    window.addEventListener('wheel', onScroll);
+    window.addEventListener('mousedown', onMouseDown);
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
 }
 
 
 
-async function resetDaWholeTing(){
+async function resetDaWholeTing( customScenarioObject ){
     // Signal the current simulation loop to stop.
     stopSimulation = true;
 
@@ -245,6 +417,10 @@ async function resetDaWholeTing(){
     window.removeEventListener('keydown', onKeyDown);
     window.removeEventListener('keyup', onKeyUp);
     window.removeEventListener('resize', onResize);
+    window.removeEventListener('wheel', onScroll);
+    window.removeEventListener('mousedown', onMouseDown);
+    window.removeEventListener('mousemove', onMouseMove);
+    window.removeEventListener('mouseup', onMouseUp);
 
     // Begin the overlay animation.
     animateOverlayIn();
@@ -268,19 +444,32 @@ async function resetDaWholeTing(){
         // Reset simulation timing and counters.
         MSTIME = 22;
         STEPCOUNT = 0;
+        INPUTUPDATEFREQ = 30;
 
         
         // Reinitialize your simulation data.
-        FINAL_POINT_DATA = returnAllStructures();
+        FINAL_POINT_DATA = returnAllStructures( customScenarioObject ? customScenarioObject : null );
         ALL_READABLE_ENTS = new Array(FINAL_POINT_DATA.TOTAL_CPU_BUFFER_SIZE);
         ALL_SFX = new Array(FINAL_POINT_DATA.TOTAL_SFXS).fill(0);
 
         // Reset camera and related global state.
-        camera.position = [FINAL_POINT_DATA.BUCKET_SPACING*FINAL_POINT_DATA.bucketsPerimeter/2, 15, 2];
+        camera.position = [FINAL_POINT_DATA.BUCKET_SPACING*FINAL_POINT_DATA.bucketsPerimeter/2, 9, 6];
         camera.rotation = [0.44, Math.PI];
         camera.target = [0, 0, 0];
         camera.useTarget = false;
         CURR_CAM_MODE = -1;
+
+        CURR_TOOL_SELECTED = 1;
+        CURR_SELECTED_ZOOM = 23.0;
+
+        isDragging = false;
+        startPos = { x: 0, y: 0 };
+        dragVector = { x: 0, y: 0 };
+
+        camdragvelx = 0;
+        camdragvel2x = 0;
+        camdragvely = 0;
+
         CURR_TARGET_MODE = 0;
         CURR_TARGET_ID_1plus = 0;
         CURR_CAM_TARGET = {x: 0, y: 0, z: 0};
@@ -294,6 +483,7 @@ async function resetDaWholeTing(){
 
         LAST_VEL_FROM_KEY_PROTAGONIST = {x: 0, y: 0, z: 0};
         CLOSEST_ENT_ID = 0;
+        CLOSEST_ENT_HOVERED_OVER_ID = 0;
 
         userKeySpace = false;
         userKeyShift = false;
@@ -346,11 +536,27 @@ async function resetDaWholeTing(){
         DEBUG_VISUALS = false;
 
         // Restart the simulation by calling main() again.
-       await main();
+       await main( customScenarioObject );
        // Once the new simulation is loaded, animate overlay out (fade to transparent).
        animateOverlayOut();
        playAudio("bannernotif");
+
+       document.getElementById('resetbutton').blur();
+       
+       
+       
+       document.getElementById('snglplayerbuton').blur();
+       //document.getElementById('multiplyerbuton').blur();
+
+       document.getElementById('gpuCanvas').focus();
+
+       //resetCarousel();
+       //cycleCarousel();
     //}, MSTIME);
+
+	if( customScenarioObject.starting >= 0 ){
+		GAME_MODE = 1;
+	}
 }
 
 
@@ -368,6 +574,12 @@ function cpuReadback(copyArray) {
             sy:copyArray[ jj*FINAL_POINT_DATA.WRITE_SLOT_SIZE + 6 ],
             sz:copyArray[ jj*FINAL_POINT_DATA.WRITE_SLOT_SIZE + 7 ],
         }
+    }
+
+    // INTITAL SET TO CONTROL 'm'
+
+    if( STEPCOUNT == 2 ){
+        //lookForMainProtagonistAndSet();
     }
 
     for(let hh = 0;hh < (ALL_SFX.length);hh++){
@@ -395,7 +607,8 @@ function cpuReadback(copyArray) {
         }
         // SFX spring snap
         else if( hh === 2 && val > 0 ){
-            playAudio( "realpang" );
+            //playAudio( "realpang" );
+			playAudio( "balop" );
         }
     }
 }
@@ -466,6 +679,8 @@ function updateCamera() {
         if (keys.arrowdown) camera.rotation[0] += camera.sensitivity;
         if (keys.arrowleft) camera.rotation[1] += camera.sensitivity;
         if (keys.arrowright) camera.rotation[1] -= camera.sensitivity;
+        
+
     }
     // Target mode:
     else{
@@ -473,7 +688,7 @@ function updateCamera() {
         // CURR_CAM_TARGET.x
         // CURR_CAM_TARGET.y
         // CURR_CAM_TARGET.z
-        let SPRING_REST_DISTANCE = 23.0; // Resting distance of the spring
+        let SPRING_REST_DISTANCE = CURR_SELECTED_ZOOM;//23.0; // Resting distance of the spring
         let SPRING_CONSTANT = 67.9;      // Spring stiffness (k)
         let DAMPING_FACTOR = 18.93;      // Damping factor to avoid oscillation
 
@@ -603,7 +818,23 @@ function updateCamera() {
             //CURR_CAM_VELOCITY.x += camBoostmode;
             //CURR_CAM_VELOCITY.z += camBoostmode;
         }
-        
+
+        let mousedfac = 0.0015;
+        if( isDragging ){   // get how far to move n stuff  
+            camdragvelx -= right[0] * camera.speed*mousedfac*dragVector.x; 
+            camdragvel2x -= right[2] * camera.speed*mousedfac*dragVector.x; 
+
+            camdragvely += camera.speed*mousedfac*dragVector.y;
+        }
+
+        camdragvelx *=  0.91;
+        camdragvel2x *= 0.91;
+        camdragvely *=  0.91;
+
+        camera.position[0] += camdragvelx;
+        camera.position[2] += camdragvel2x;
+        camera.position[1] += camdragvely;
+
 
         // Update the position of the camera
         camera.position[0] += CURR_CAM_VELOCITY.x * deltaTime;
@@ -731,7 +962,6 @@ async function initWebGPU() {
     canvasFormat = navigator.gpu.getPreferredCanvasFormat();
 
     resizeCanvas();
-    window.addEventListener('resize', onResize);
     // window.addEventListener('resize', () => {
     //     resizeCanvas();
     //     recreateDepthTexture();
@@ -895,7 +1125,7 @@ fn calculate_nuground(x: f32, z: f32, sftep: f32) -> f32 {
     let freq_x: f32 = 0.09;
     let freq_z: f32 = 0.044;
 
-    var amp1 = 2.3f;
+    var amp1 = 1.8f;
 
     return 0.7 * amp1 * sin(x * freq_x + sftep * base_freq *  0.08) *
            0.38 * amp1 * cos(z * freq_z + sftep * base_freq * 0.14) *
@@ -903,6 +1133,30 @@ fn calculate_nuground(x: f32, z: f32, sftep: f32) -> f32 {
            0.28 * amp1 * cos(x * freq_z + sftep * base_freq * 0.30) *
            0.93 * amp1 * cos(x * freq_x + sftep * base_freq * 0.51);
    
+}
+
+// Define this function somewhere in your WGSL code
+fn hue_to_rgb(hue: f32) -> vec3<f32> {
+    let h = hue / 60.0;
+    let i = floor(h);
+    let f = h - i;
+    var r: f32 = 0.0;
+    var g: f32 = 0.0;
+    var b: f32 = 0.0;
+    if (i == 0.0) {
+        r = 1.0; g = f; b = 0.0;
+    } else if (i == 1.0) {
+        r = 1.0 - f; g = 1.0; b = 0.0;
+    } else if (i == 2.0) {
+        r = 0.0; g = 1.0; b = f;
+    } else if (i == 3.0) {
+        r = 0.0; g = 1.0 - f; b = 1.0;
+    } else if (i == 4.0) {
+        r = f; g = 0.0; b = 1.0;
+    } else if (i == 5.0) {
+        r = 1.0; g = 0.0; b = 1.0 - f;
+    }
+    return vec3<f32>(r, g, b);
 }
 
 
@@ -1164,11 +1418,14 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     var step: u32 = userInput[6];
     var sftep: f32 = f32(step);
 
+    var ifd = f32(id);
+
     var da_counter_max: f32 = 99999f;
 
     // 1) Possibly update terrain
     // Each vertex has 5 floats: x,y,z,u,v
     // let totalVertices = arrayLength(&terrainVertices) / 5;
+    //var wavepowerog: u32 = userInput[29];// wave power of ground
     if (id < arrayLength(&terrainVertices)/5u) {
 
         
@@ -1187,6 +1444,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
         terrainVertices[base+1] = wave; // update y
     }
 
+    var startingnumber: f32 = ${FINAL_POINT_DATA.SCENARIO_STARTER_NUMBER}f;
      
     var ind_main_char: u32 = ${FINAL_POINT_DATA.KEY_PROTAGONIST}u;
     var mainChar: bool = ind_main_char == id; 
@@ -1234,7 +1492,17 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     var rolesSize: u32 = ${FINAL_POINT_DATA.ENT_ROLES_SIZE}u;
 
     
+    var customParticleStart: u32 = ${FINAL_POINT_DATA.START_OF_SPECIAL_PARTICLES}u;
+    var customParticleSize: u32 = ${FINAL_POINT_DATA.SPECIAL_COLOUR_INSTRUCTIONS_SIZE}u;
+
+    
+    var listOfTealsStart: u32 = ${FINAL_POINT_DATA.START_OF_ALL_TEAL_PARTICLES}u;
+    var totalTealParSize: u32 = ${FINAL_POINT_DATA.TOTAL_TEAL_PARTICLES}u;
+
+    
     var resPartSize: u32 =  ${FINAL_POINT_DATA.RES_PART_SIZE}u;   // how large is a particle reserved section
+
+    var eeekey: u32 = userInput[5]; // e is being pressed and held
 
     var tee: u32 = userInput[7];
     var eff: u32 = userInput[8];
@@ -1255,6 +1523,19 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
 
     var debugvizuals: u32 = userInput[20]; // for showing the xyz axis
 
+    var selectedtool: u32 = userInput[21];//CURR_TOOL_SELECTED
+
+    var hovered_ent_id: u32 = userInput[22];        //current guy highlgihted
+
+    var cambx: f32 = f32( userInput[23] );         // cam bucket x
+    if( cambx >= 10000f ){ cambx = -(cambx%10000f);}
+
+    var camby: f32 = f32( userInput[24] );         // cam bucket y
+    if( camby >= 10000f ){ camby = -(camby%10000f);}
+
+    var cambz: f32 = f32( userInput[25] );         // cam bucket z
+    if( cambz >= 10000f ){ cambz = -(cambz%10000f);}
+
     var pausedd: bool = false;
     if(userInput[11] > 0){
         pausedd = true;
@@ -1263,11 +1544,15 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     var targetingid: u32 = userInput[12];// +1'd id of the ent youre controlling
 
     var sgrav: f32 = ${FINAL_POINT_DATA.STD_GRAV}f;
+    var bgrav: f32 = ${FINAL_POINT_DATA.STD_BUBL}f;
 
     var spawnStartX: f32 = ${FINAL_POINT_DATA.START_OF_SPAWN_X}f;
     var spawnStartY: f32 = ${FINAL_POINT_DATA.START_OF_SPAWN_Y}f;
     var spawnSizeX: f32 = ${FINAL_POINT_DATA.SPAWN_SIZE_X}f;
     var spawnSizeY: f32 = ${FINAL_POINT_DATA.SPAWN_SIZE_Y}f;
+
+    var middleSpawnX: f32 = ${FINAL_POINT_DATA.MIDDLE_SPAWN_X}f;
+    var middleSpawnY: f32 = ${FINAL_POINT_DATA.MIDDLE_SPAWN_Y}f;
 
 
     var mudStart: u32 = ${FINAL_POINT_DATA.MUD_START}u;// for the mud that goes back to position
@@ -1372,12 +1657,19 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     var rotation_engine: f32 = 0f;
 
     var behaviour_type: u32 = 0u;
+    var max_sight_range: f32 = 0f;
+
+    var custom_col_mov_size: u32 = 0u;
+    var custom_col_ind: u32 = 0u;
+
+    var wants_entity_role: f32 = 0f;
 
     // As long as it's not a 13u (singular nucleus command center for the entity,) 
     //  - use the meta3u which will be the teal particle everytime
     if( !pausedd ){
 
-        if( tutu == 1u ){ // Collision bucket
+        // Collision bucket
+        if( tutu == 1u ){ 
 
             // This is for always resetting i guess?
             if(id < totalSfxs){
@@ -1482,7 +1774,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
             }
 
             // SNAP to walls
-            else if( axisVal < 6u ){ 
+            else if( axisVal < 6u ){
                 if( axisVal == 3u ){        // X axis disterac
                     axdotSpcng = orbitmaincharx / f32( axisLength );
                     x = orbitmaincharx - f32(id%axisLength) * axdotSpcng;
@@ -1517,16 +1809,164 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
                 }
             }
 
+            // Highlight the current selection 
+            //          OR highlight the thing ur hovering over
+            else if( axisVal == 6u || axisVal == 7u){
+
+                x = orbitmaincharx;
+                y = orbitmainchary;
+                z = orbitmaincharz;
+
+                // If DEBUG    AND     on the hovered ent
+                // if( (debugvizuals < 1u && axisVal == 7u) || ( targeted_ent_id < 1u ) ){
+                //     x = orbitmaincharx;
+                //     y = orbitmainchary;
+                //     z = orbitmaincharz;
+                // }
+
+                // If we're not in debug visuals mode OR we're in just the general highlithger mode
+                if( (axisVal == 6u && targeted_ent_id > 0u) || (axisVal == 7u && debugvizuals > 0u) ){
+
+                    var targiddd: u32 = targeted_ent_id;
+                    if( axisVal == 7u ){
+                        targiddd = hovered_ent_id;      // If the currently seelcted one or theone u hvering
+                    }
+
+                    var spherepoint = (id % axisLength);
+                    x = particles[ startOfEnts + ((targiddd-1u)*partSize) + 1u + grabOffset ];
+                    y = particles[ startOfEnts + ((targiddd-1u)*partSize) + 2u + grabOffset ];
+                    z = particles[ startOfEnts + ((targiddd-1u)*partSize) + 3u + grabOffset ];
+
+                    // FIRST half of the 50 particles, do the orbiter ting
+                    if( spherepoint < axisLength/2u){
+                        // ^ Work with 50 of them right here
+
+                        var spoint = sphere_point( spherepoint, axisLength/2u, sftep );
+
+                        x += spoint.x * (2.1f + (sin(sftep*0.08f)*0.12f) );
+                        y += spoint.y * (2.1f + (sin(sftep*0.08f)*0.12f) );
+                        z += spoint.z * (2.1f + (sin(sftep*0.08f)*0.12f) );
+
+                        // Green or red color tint on the targeting marker
+                        var rollee: u32 = u32( particles[ startOfEnts + ((targiddd-1u)*partSize) + 13u + grabOffset ] );
+
+                        var collide_withh: u32 = u32( particles[ dbStartInd + rolesStartInd + (rollee*rolesSize) + 3u ] ); 
+                            // Val3 of the role is the 'collide_with' variable , 0 = collide with goods, 1 = collide iwth bads, 2 = collide with both
+                        // The meta7 of the targeted ind should always be a t13 so this is the DB ind
+                        // Get the collide profile of the t13
+
+                        // DONnUT MODIFY THIS < - LINE CHANGe HOW THe TARGETER RETICLE REACTS WITH TARGES
+
+                        metafour = 120f + (sin(sftep*0.41f)*40f);
+                        metafive = 140f;
+                        metasix =  120f + (sin(sftep*0.41f)*40f);
+                        // if( collide_withh == 0u ){ // collides with good ents
+                        //     metafour = 250f;
+                        //     metafive = 0f;
+                        //     metasix = 0f;
+                        // }
+                        // else if( collide_withh == 1u ){ // collides with bad ents
+                        //     metafour = 0f;
+                        //     metafive = 250f;
+                        //     metasix = 0f;
+                        // }
+                        // else if( collide_withh == 2u ){ // collides with both
+                        //     // metafour = 120f;
+                        //     // metafive = 150f;
+                        //     // metasix = 60f;
+                        // }
+                        // else{ // should never be this
+                        //     metafour = 255f;
+                        //     metafive = 255f;
+                        //     metasix = 255f;
+                        // }
+                    }
+                    // SECOND half of the 50 particles use to draw a line
+                    else{
+                        // direction to the target entitiy now
+                        directSideDir = vec3<f32>( x, y, z ) - 
+                            vec3<f32>( orbitmaincharx, orbitmainchary, orbitmaincharz );
+                        var ddoftarg = length( directSideDir);
+                        directSideDir = normalize( directSideDir );
+
+                        axdotSpcng = ddoftarg / f32( axisLength / 2u );
+                        
+                        x = orbitmaincharx + (directSideDir.x * f32(id%(axisLength/2)) * axdotSpcng);
+                        y = orbitmainchary + (directSideDir.y * f32(id%(axisLength/2)) * axdotSpcng);
+                        z = orbitmaincharz + (directSideDir.z * f32(id%(axisLength/2)) * axdotSpcng);
+                        metafour = 120f + (sin( -sftep*0.41f + ifd*0.24f )*120f);
+                        metafive = 120f + (sin( -sftep*0.41f + ifd*0.24f )*120f);
+                        metasix =  120f + (sin( -sftep*0.41f + ifd*0.24f )*120f);
+                    }
+                }
+
+            }
+
+            // GOD RAYS should be 1100 of them 12x50
+            else if( axisVal >= 8u && axisVal < 20 ){   // <- dont worry about this if statment just leave it
+                // var directionOfLight = vec3<f32>( middleSpawnX-0.7f*bucket_pacing, -6f*bucket_pacing, middleSpawnY+1.7f*bucket_pacing );  // direction of the top light pointing down
+                // var sunlightparticle: f32 = f32(id - 400u);
+                // // ^ this will be a number from 0 to 1099
+                // // Time step f32 varialbe that increments by 1.0, 60 times a second:
+                // //      sftep
+                // metafour = 250f;    //red
+                // metafive = 250f;    //green
+                // metasix = 250f;     //blue
+                // // ^ this is how u set the colour of this light particle
+                // // Add your code here and change the rgb again if you need!
+
+                var directionOfLight = vec3<f32>( middleSpawnX-0.7f*bucket_pacing, -6f*bucket_pacing, middleSpawnY+1.7f*bucket_pacing );  // direction of the top light pointing down
+
+                var sunlightparticle: f32 = f32(id - 400u);  // Particle index from 0 to 599
+
+                // Step 1: Assign particles to beams (12 beams, 50 particles each)
+                let beamIdx_f = floor(sunlightparticle / 50.0);        // Beam index: 0.0 to 11.0
+                let particleInBeam = sunlightparticle - beamIdx_f * 50.0;  // Position in beam: 0.0 to 49.0
+
+                // Step 2: Define beam starting points in a 3x4 grid
+                let row = floor(beamIdx_f / 4.0);         // Rows: 0.0, 1.0, 2.0
+                let column = beamIdx_f - 4.0 * row;       // Columns: 0.0, 1.0, 2.0, 3.0
+                let spacing = 2.0 * bucket_pacing;        // Grid spacing
+                let startX = middleSpawnX + (row - 1.0) * spacing;      // X-offset: -spacing, 0, +spacing
+                let startZ = middleSpawnY + (column - 1.5) * spacing;   // Z-offset: -1.5s, -0.5s, 0.5s, 1.5s
+                let startPos = vec3<f32>(startX, 14.0 * bucket_pacing, startZ);
+
+                // Step 3: Define light direction and position particles along beams
+                let lightDir = normalize(vec3<f32>(-0.7, -6.0, 1.7));  // Normalized direction (mostly downward)
+                let maxT = -14.0 * bucket_pacing / lightDir.y;         // Distance to reach y=0
+                let tBase = particleInBeam / 49.0;                     // Base t: 0 to 1 over 50 particles
+                let tOffset = fract(sftep / 60.0) * 0.2;              // Time-based offset (0 to 0.2 cycle)
+                let t = (tBase + tOffset) * maxT;                     // Final t with animation
+                let position = startPos + t * lightDir;
+
+                // Step 4: Set particle positions
+                x = position.x;
+                y = position.y;
+                z = position.z;
+
+                // Step 5: Set colors (warm sunlight with refraction-like variation)
+                let baseR = 255.0;                                    // Red: full intensity
+                let baseG = 255.0 - 2.0 * beamIdx_f;                  // Green: slight decrease per beam
+                let baseB = 224.0 + 2.0 * beamIdx_f;                  // Blue: slight increase per beam
+                let shimmer = 1.0 + 0.05 * sin(sftep * 0.5 + beamIdx_f);  // Intensity shimmer
+                metafour = baseR * shimmer;                           // Red with shimmer
+                metafive = min(baseG * shimmer, 255.0);               // Green, clamped to 255
+                metasix = min(baseB * shimmer, 255.0);                // Blue, clamped to 255
+ 
+
+
+            }
+
             // WHERE to STORE THE REST OF THE BUCKET PARTICLE VALUES
             else{
 
-                // NOW YOu have 3796 =   4096 - 300 
+                // NOW YOu have 3696 =   4096 - 400
 
                 // To work with
-                var rbemInd = id - 300u;
-                // now it's between 0 and 3795...
+                var rbemInd = id - 400u;
+                // now it's between 0 and 3695...
 
-                
+                // Use the next  45
 
 
                 // var ggg = calculate_spiral_coordinates( id, 0.3f );
@@ -1565,6 +2005,12 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
             rotation_engine = particles[ dbStartInd + rolesStartInd + (hub_ent_role*rolesSize) + 9u ];
 
             behaviour_type = u32( particles[ dbStartInd + rolesStartInd + (hub_ent_role*rolesSize) + 10u ] );
+            max_sight_range = particles[ dbStartInd + rolesStartInd + (hub_ent_role*rolesSize) + 11u ];
+
+            custom_col_mov_size = u32( particles[ dbStartInd + rolesStartInd + (hub_ent_role*rolesSize) + 15u ] );
+            custom_col_ind = u32( particles[ dbStartInd + rolesStartInd + (hub_ent_role*rolesSize) + 16u ] );
+
+            wants_entity_role = particles[ dbStartInd + rolesStartInd + (hub_ent_role*rolesSize) + 17u ];
 
 
             //var collide_with = particles[ dbStartInd + rolesStartInd + (hub_ent_role*rolesSize) + 3u ];//collide_with... -> (2=both), (1=bad), (0=good)
@@ -1602,31 +2048,88 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
                 var radiusOfExpl: f32 = particles[ startOfEnts + (weaponParticleId*partSize) + 11u + grabOffset ];      // green (radius)
                 var missileArmed: f32 = particles[ startOfEnts + (weaponParticleId*partSize) + 12u + grabOffset ];      // blue (radius)
                     // (metafive)
-                var explEpicenter = vec3<f32>( 
-                    particles[ startOfEnts + (weaponParticleId*partSize) + 1u + grabOffset ],
-                    particles[ startOfEnts + (weaponParticleId*partSize) + 2u + grabOffset ],
-                    particles[ startOfEnts + (weaponParticleId*partSize) + 3u + grabOffset ] );  //x,y,z of the stuff
 
-                //radiusOfExpl = 1f;
-                var dst = distance( me, explEpicenter );
+                var centerOfWeapon = vec3<f32>( 
+                        particles[ startOfEnts + (weaponParticleId*partSize) + 1u + grabOffset ],
+                        particles[ startOfEnts + (weaponParticleId*partSize) + 2u + grabOffset ],
+                        particles[ startOfEnts + (weaponParticleId*partSize) + 3u + grabOffset ] );  //x,y,z of the stuff
 
                 // If particle is within the value here
-                if( typeOfWepon == 19f && dst < radiusOfExpl && radiusOfExpl > 0f ){
-                    dst = 1f - (dst/radiusOfExpl);//dst - radiusOfExpl;
-                    var derer = normalize( me - explEpicenter );    // the dir
+                if( typeOfWepon == 19f ){
 
-                    // How hard to push back from the collision ball (this value is)
-                    //if( dst < 0 ){
-                    derer *= (std_spring_k_val*132f) * (dst*dst);
-                    // }
-                    // else{ 
-                    //     derer *= -(std_spring_k_val*147f) * abs(dst);
-                    // }
+                    
 
-                    vx += derer.x;
-                    vy += derer.y;
-                    vz += derer.z;
+                    //radiusOfExpl = 1f;
+                    var dst = distance( me, centerOfWeapon );
+
+                    if( dst < radiusOfExpl && radiusOfExpl > 0f ){
+                        dst = 1f - (dst/radiusOfExpl);//dst - radiusOfExpl;
+                        var derer = normalize( me - centerOfWeapon );    // the dir
+
+                        // How hard to push back from the collision ball (this value is)
+                        //if( dst < 0 ){
+                        derer *= (std_spring_k_val*132f) * (dst*dst);
+                        // }
+                        // else{ 
+                        //     derer *= -(std_spring_k_val*147f) * abs(dst);
+                        // }
+
+                        vx += derer.x;
+                        vy += derer.y;
+                        vz += derer.z;
+                    }
                 }
+
+                // LASER NOMICS
+                else if( typeOfWepon == 20f ){
+                    var isLaserArmed: f32 = particles[ startOfEnts + (weaponParticleId*partSize) + 8u + grabOffset ]; 
+                    var laserOwner: f32 = particles[ startOfEnts + (weaponParticleId*partSize) + 9u + grabOffset ];  
+                    var laserDestination = vec3<f32>( 
+                        particles[ startOfEnts + (weaponParticleId*partSize) + 10u + grabOffset ],
+                        radiusOfExpl,
+                        missileArmed );  //x,y,z direction of the direction of the thing
+
+                    // HERE calculate the shortest distance from x,y,z (which are f32's)
+                    // to the line formed between laserDestination and centerOfWeapon
+                    // it needs to be the line PAST the start of the laser which starts at centerOfWeapon
+                    // (so not the line continuing behind centerOfWeapon)
+
+                    if( isLaserArmed == 1f &&  meta3u - 1u != u32(laserOwner) - 1u && tutu != 13u){
+
+                        // Define the line segment: from centerOfWeapon to laserDestination
+                        let start = centerOfWeapon;
+                        let end = laserDestination; // Assuming laserDestination is the endpoint
+                        let line_dir = end - start; // Direction vector of the line segment
+                        let to_point = me - start;  // Vector from start to the point me
+
+                        // Calculate the projection of to_point onto line_dir
+                        let line_length_sq = dot(line_dir, line_dir);
+                        var ttt = dot(to_point, line_dir) / line_length_sq;
+
+                        // Clamp t to [0, 1] to stay within the line segment (from centerOfWeapon forward)
+                        ttt = clamp(ttt, 0.0, 1.0);
+
+                        // Find the closest point on the line segment
+                        let closest_point = start + ttt * line_dir;
+
+                        // Calculate the distance from me to the closest point
+                        let dist_vec = me - closest_point;
+                        let dst = length(dist_vec);
+
+                        // Optionally, use dst for further calculations (e.g., apply force if within radius)
+                        // Example:
+                        if (dst < radiusOfExpl && radiusOfExpl > 0.0) {
+                            let force = normalize(dist_vec) * (std_spring_k_val * 32.0) * (1.0 - dst / radiusOfExpl);
+                            vx += force.x;
+                            vy += force.y;
+                            vz += force.z;
+                        }
+                    }
+
+                    
+                }
+
+
                 ww = ww + 1u;
             }
 
@@ -1671,10 +2174,10 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
                     if( dist > 0 ){
 
                         
-                        var snpMulti: f32 = 0.74f;
+                        var snpMulti: f32 = 0.82f;
 
                         // If normal spring forces
-                        if( sprMode == 1f ){
+                        if( sprMode > 0f ){//}== 1f ){
 
                             var snapSpring: bool = false;
                             // Normal spring snaps
@@ -1701,7 +2204,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
                             }
 
                             if( snapSpring ){ 
-                                metafour += 30f; // make slightly more red
+                                //metafour += 15f; // make slightly more red
                                 //metasix += t*1000f; 
                                 //t = 4f;
                                 particles[ exactSpringEntry + 2u ] = 0f;// deactivate spring
@@ -1718,7 +2221,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
                             aveFriendsDir += me - you; // live spring move towards tem
                             //dist = (stabledist - dist);
                             if(dist < snpMulti*2.4f*stabledist){ // within the healing range!
-                                metafour -= 30f;
+                                //metafour -= 15f;
                                 
                                 particles[ exactSpringEntry + 2u ] = 1f;// reactivate spring
                                 // SFX spring snap (TODO make it heal)
@@ -1738,10 +2241,9 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
 
 
                         // Gravitate towards
-                        if( gravitateToCenter ){
+                        if( gravitateToCenter && false){
 
                             aveFriendsDir = normalize(aveFriendsDir);// the difrection forneindas
-
 
                             // Get center point (weight it 2x as it's friends)
                             you.x = particles[ startOfEnts + ((meta3u-1u)*partSize) + 1u + grabOffset ];//GETTING THE XYZ OF THE ORIENT PRTICLE FOR U
@@ -1757,7 +2259,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
                             kvalue = -0.00005f;
                         }
                         
-
+                        //kvalue *= sprMode;
                         
                         // Distance to smaller than 0
                         if( dist < 0 ){
@@ -1816,6 +2318,39 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
             // vy = 0f;
             // vz = 0f;
         }
+
+        // CUSTOM SPECIAL PARTICLE 
+        if( tutu != 13u && meta3u > 0u ){
+            var mem3 = f32(meta3u - 1u); // now mm3 is the particle id 
+            // loop through what to do 
+            var ww: u32 = 0u;
+            loop {
+                if ww >= custom_col_mov_size { break; } // go through each bad entity
+                var rroi: f32 = particles[ dbStartInd + customParticleStart + custom_col_ind*customParticleSize + (ww*customParticleSize)  + 0u ];
+                var ggoi: f32 = particles[ dbStartInd + customParticleStart + custom_col_ind*customParticleSize + (ww*customParticleSize)  + 1u ];
+                var bboi: f32 = particles[ dbStartInd + customParticleStart + custom_col_ind*customParticleSize + (ww*customParticleSize)  + 2u ];
+
+                var modeoi: f32 = particles[ dbStartInd + customParticleStart + custom_col_ind*customParticleSize + (ww*customParticleSize)  + 3u ];
+
+                if( metafour == rroi && metafive == ggoi && metasix == bboi ){
+
+                    // UP N DOWN FLAPPER FOR BUMBLEBEE
+                    if(modeoi == 1f){
+                        vy += sin(sftep*0.08f+mem3*33f)*0.0035f;
+                    }
+                    // UP N DOWN FLAPPER FOR DRAGONFLY
+                    else if(modeoi == 2f){
+                        vy += sin(sftep*0.08f+mem3*53f)*0.0035f;
+                    }
+                    else if(modeoi == 3f){
+                        vy += sin(sftep*0.08f+mem3*55f)*0.0035f;
+                    }
+                    //vy += 0.03f;
+                }
+
+                ww = ww + 1u;
+            }
+        }
         
 
         // Check for if your assigned closest collision ball has something you need to pay attention to:
@@ -1867,6 +2402,52 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
 
             }
 
+        }
+
+        // DONUTMODIFY <- THI s is for ufo type force t=2 hull particles / all
+        if( tutu == 2u && user_ctrl_scheme == 4u && meta3u > 0u && ind_main_char == (meta3u-1)){
+            if(tee > 0u || gee > 0u || esh > 0u || eff > 0u || spac > 0u || shft > 0u){
+                var tealmm3 = meta3u - 1u; // now mm3 is the particle id 
+                you.x = particles[ startOfEnts + (tealmm3*partSize) + 1u + grabOffset ];//GETTING THE XYZ OF THE ORIENT PRTICLE FOR U
+                you.y = particles[ startOfEnts + (tealmm3*partSize) + 2u + grabOffset ];
+                you.z = particles[ startOfEnts + (tealmm3*partSize) + 3u + grabOffset ];
+                // For all the control sections move it according to the 
+                var ufox: f32 = bucket_pacing * cambx + bucket_pacing/2f;
+                var ufoy: f32 = bucket_pacing * camby + bucket_pacing/2f;
+                var ufoz: f32 = bucket_pacing * cambz + bucket_pacing/2f;
+
+                var dirOfUfoForce = you - vec3<f32>( ufox, ufoy, ufoz );
+                dirOfUfoForce = normalize( dirOfUfoForce );
+
+                if( tee > 0u || gee > 0u ){
+                    var enginforce = er_forward_engine;
+                    if( gee > 0u ){ enginforce *= -1;}
+                    vx += dirOfUfoForce.x * enginforce;
+                    vy += dirOfUfoForce.y * enginforce;
+                    vz += dirOfUfoForce.z * enginforce;
+
+                }
+                // STRAFE RIGHT: use cross(forward, up) or cross(up, forward)
+                let up = vec3<f32>(0.0, 1.0, 0.0);
+                let right = normalize(cross(up, dirOfUfoForce));
+
+                if (esh > 0u || eff > 0u) {
+                    var enginforce = er_forward_engine;
+                    if( eff > 0u ){ enginforce *= -1;}
+                    vx += right.x * -enginforce;
+                    vy += right.y * -enginforce;
+                    vz += right.z * -enginforce;
+                }
+                
+                // ascend / descend
+                if (spac > 0u || shft > 0u) {
+                    var vertForce: f32 = er_forward_engine;
+                    if (shft > 0u) {     // Shift is go down
+                        vertForce *= -1.0;
+                    }
+                    vy += vertForce;
+                }
+            }
         }
         
         
@@ -2088,16 +2669,24 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
 
                     var intsPoint = vec3<f32>( 0,0,0);
 
-                    // Behaviour 1 is pusuring the target id,
-                    if( behaviour_type == 1u && er_target_id > 0u ){
-                        var interesting_id: u32 = er_target_id - 1u; 
+                    // Behaviour 1 is pusuring the target id,            OR eyeball that forces slight upward propulsion
+                    if( (behaviour_type == 1u && er_target_id > 0u ) || behaviour_type == 5u ){
+                        var interesting_id: u32 = er_target_id - 1u;
+
+                        if( behaviour_type == 5u ){ // IF CHOOSING RANDOM BOYS to chase after
+                            var randomVictim: f32 = EZ_BETTER_RAND(  f32(helprind)*0.3333f + 0.6667*f32((helprind*33u + step)%1900u)  );
+                            interesting_id = u32( f32(maxbadents) * randomVictim );
+
+                            interesting_id =  u32(particles[ dbStartInd + maxxedGoodEnts + interesting_id ]) - 1u;
+                        }
+
                         intsPoint.x = particles[ startOfEnts + (interesting_id*partSize) + 1u + grabOffset ];//GETTING THE XYZ OF THE ORIENT PRTICLE FOR U
                         intsPoint.y = particles[ startOfEnts + (interesting_id*partSize) + 2u + grabOffset ];
                         intsPoint.z = particles[ startOfEnts + (interesting_id*partSize) + 3u + grabOffset ];
 
                     }
 
-                    // Behaviour 2 is going to random locations 
+                    // Behaviour 2 is going to random locations    
                     else if( behaviour_type == 2u ){
                         // Use the info to get the kind of 
                         // Remember "helprind" is still the real id of the teal particle for this 
@@ -2168,9 +2757,9 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
                     }
                     // apply pull back
                     else if(tutu == 7u){ // Back part
-                        vx += interestingDir.x *er_backward_engine;
-                        vy += interestingDir.y *er_backward_engine;
-                        vz += interestingDir.z *er_backward_engine;
+                        vx += -interestingDir.x *er_backward_engine;
+                        vy += -interestingDir.y *er_backward_engine;
+                        vz += -interestingDir.z *er_backward_engine;
                     }
                     
                     else if(tutu == 10u){ // Left part
@@ -2215,13 +2804,20 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
                         // - -- - - --
                         // - - - - 
                         if( tee > 0u ){         // W KEY (NOT 'T')
-                            steerForce = 0.033f;
+                            steerForce = er_forward_engine;//0.033f;
 
                             if(tutu == 6u){ // Forward part
                                 steerForce *= 1;
                             }
                             else if(tutu == 7u){ // Back part
-                                steerForce *= 0.21;
+                                steerForce *= 1;
+                            }
+
+                            else if(tutu == 8u){ // Top part
+                                steerForce *= 1*top_bottom_mass_ratio;
+                            }
+                            else if(tutu == 9u){ // Bottom part
+                                steerForce *= 1;
                             }
                             
                             else if(tutu == 10u){ // Left part
@@ -2243,31 +2839,38 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
                         }
 
                         if(gee > 0u){           // S KEY (NOT 'G')
-                            steerForce = 0.02f;
+                            steerForce = er_backward_engine;//0.02f;
                             if(tutu == 6u){ // Forward part
-                                steerForce *= -1;
+                                steerForce *= 1;
                             }
                             else if(tutu == 7u){ // Back part
-                                steerForce *= -0.21;
+                                steerForce *= 1;
+                            }
+
+                            else if(tutu == 8u){ // Top part
+                                steerForce *= 1*top_bottom_mass_ratio;
+                            }
+                            else if(tutu == 9u){ // Bottom part
+                                steerForce *= 1;
                             }
                             
                             else if(tutu == 10u){ // Left part
-                                steerForce *= -1;
+                                steerForce *= 1;
                             }
                             else if(tutu == 11u){ // Right part
-                                steerForce *= -1;
+                                steerForce *= 1;
                             }
 
                             else if(tutu == 12u){ // Cebter part
-                                steerForce *= -1;
+                                steerForce *= 1;
                             }
                             else{
                                 steerForce *= 0f;
                             }
 
-                            vx += straightAheadDir.x * steerForce;
-                            vy += straightAheadDir.y * steerForce;
-                            vz += straightAheadDir.z * steerForce;
+                            vx -= straightAheadDir.x * steerForce;
+                            vy -= straightAheadDir.y * steerForce;
+                            vz -= straightAheadDir.z * steerForce;
                         }
 
                         // - - -
@@ -2276,7 +2879,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
                         // - -- - - --
                         // - - - - 
                         if(eff > 0u){           // A KEY (NOT 'F')
-                            steerForce = 0.034f;
+                            steerForce = rotation_engine;//0.034f;
                             if(tutu == 10u){ // Left part
                                 steerForce *= 1f;
                             } 
@@ -2289,10 +2892,26 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
                             vx += straightAheadDir.x * steerForce;
                             vy += straightAheadDir.y * steerForce;
                             vz += straightAheadDir.z * steerForce;
+
+                            
+
+                            steerForce = rotation_engine;//0.034f;
+                            if(tutu == 6u){ // Forward part
+                                steerForce *= 1;
+                            }
+                            else if(tutu == 7u){ // Back part
+                                steerForce *= -1;
+                            }
+                            else{
+                                steerForce *= 0f;
+                            }
+                            vx += hardRightDir.x * steerForce;
+                            vy += hardRightDir.y * steerForce;
+                            vz += hardRightDir.z * steerForce;
                         }
                         
                         if(esh > 0u){           // D KEY (NOT 'H')
-                            steerForce = 0.034f;
+                            steerForce = rotation_engine;//0.034f;
                             if(tutu == 10u){ // Left part
                                 steerForce *= -1f;
                             } 
@@ -2305,14 +2924,57 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
                             vx += straightAheadDir.x * steerForce;
                             vy += straightAheadDir.y * steerForce;
                             vz += straightAheadDir.z * steerForce;
+
+                            
+                            steerForce = rotation_engine;//0.034f;
+                            if(tutu == 6u){ // Forward part
+                                steerForce *= -1;
+                            }
+                            else if(tutu == 7u){ // Back part
+                                steerForce *= 1;
+                            }
+                            else{
+                                steerForce *= 0f;
+                            }
+                            vx += hardRightDir.x * steerForce;
+                            vy += hardRightDir.y * steerForce;
+                            vz += hardRightDir.z * steerForce;
                         }
 
-                        if( spac > 0u ){
+                        if( shft > 0u ){         // W KEY (NOT 'T')
+                            steerForce = -rotation_engine + 0f;
 
+                            if(tutu == 6u){ // Forward part
+                                steerForce *= 1;
+                            }
+                            else if(tutu == 7u){ // Back part
+                                steerForce *= -1;
+                            }
+                             
+                            else{
+                                steerForce *= 0f;
+                            } 
+                            vx += straightUpDir.x * steerForce;
+                            vy += straightUpDir.y * steerForce;
+                            vz += straightUpDir.z * steerForce;
                         }
 
-                        if( shft > 0u ){
+                        if(spac > 0u){           // S KEY (NOT 'G')
+                            steerForce = -rotation_engine + 0f;
 
+                            if(tutu == 6u){ // Forward part
+                                steerForce *= -1;
+                            }
+                            else if(tutu == 7u){ // Back part
+                                steerForce *= 1;
+                            }
+                             
+                            else{
+                                steerForce *= 0f;
+                            } 
+                            vx += straightUpDir.x * steerForce;
+                            vy += straightUpDir.y * steerForce;
+                            vz += straightUpDir.z * steerForce;
                         }
                     }
 
@@ -2473,12 +3135,178 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
                             }
                         }
                     }
+
+                    // Ufo, camera relative controls
+                    else if( user_ctrl_scheme == 4u ){
+                        // DONUTMODIFY <- THI s is for ufo type force oritner / all
+                        
+                        // For all the control sections move it according to the 
+                        var ufox: f32 = bucket_pacing * cambx + bucket_pacing/2f;
+                        var ufoy: f32 = bucket_pacing * camby + bucket_pacing/2f;
+                        var ufoz: f32 = bucket_pacing * cambz + bucket_pacing/2f;
+
+                        var dirOfUfoForce = you - vec3<f32>( ufox, ufoy, ufoz );
+                        dirOfUfoForce = normalize( dirOfUfoForce );
+
+                        // IF PULLING towards and doing 
+                        // ///////////////////    MAGIC FISH LASSO   // SPECIAL IF STATMENT CAWSE
+                        // And lasso is currently pulling
+                        var interpredFront = 6u;
+                        var interpetedBack = 7u;
+                        if( selectedtool == 0u && eeekey == 1u){
+                            // Front now facign up
+                            if( tutu == 6u ){
+                                vy += er_top_pull/3f;
+                            }
+                            // Back now facing down 
+                            if( tutu == 7u ){
+                                vy += er_bottom_pull/3f;
+                            }
+                            
+                            // IF NOT doing the hand thing then NEUTRALIZE the top/bottom orientation
+                            if( tutu == 8u ){
+                                vy -= er_top_pull;
+                            }
+                            //Bottom
+                            if( tutu == 9u ){
+                                vy -= er_bottom_pull;
+                            }
+
+                            interpredFront = 9u;
+                            interpetedBack = 8u;    // swithc around so PALM first 
+
+                            // And auto-reorient towards the thing you are attracting
+                            // PALM FIRST palm, Palm
+                            if( targeted_ent_id>0u ){
+                                var targetx = particles[ startOfEnts + ((targeted_ent_id-1u)*partSize) + 1u + grabOffset ];//GETTING THE XYZ OF THE ORIENT PRTICLE FOR U
+                                var targety = particles[ startOfEnts + ((targeted_ent_id-1u)*partSize) + 2u + grabOffset ];
+                                var targetz = particles[ startOfEnts + ((targeted_ent_id-1u)*partSize) + 3u + grabOffset ];
+                                var dirofmagpull = normalize(you - vec3<f32>( targetx, targety, targetz ));
+                                if( tutu == interpredFront ){
+                                    vx -= dirofmagpull.x * er_forward_engine*30f;       // BONUS POWER BECAUSE needs to be higher for orienter parts
+                                    vy -= dirofmagpull.y * er_forward_engine*30f;       // BONUS POWER BECAUSE needs to be higher for orienter parts
+                                    vz -= dirofmagpull.z * er_forward_engine*30f;       // BONUS POWER BECAUSE needs to be higher for orienter parts
+                                }
+                                else if(tutu == interpetedBack ){
+                                    vx += dirofmagpull.x * er_forward_engine*30f;       // BONUS POWER BECAUSE needs to be higher for orienter parts
+                                    vy += dirofmagpull.y * er_forward_engine*30f;       // BONUS POWER BECAUSE needs to be higher for orienter parts
+                                    vz += dirofmagpull.z * er_forward_engine*30f;       // BONUS POWER BECAUSE needs to be higher for orienter parts
+                                }
+                            }
+                        }
+
+                        if( tee > 0u || gee > 0u || esh > 0u || eff > 0u){
+                            var enginforce = er_forward_engine*2.4f;                      // BONUS POWER BECAUSE needs to be higher for orienter parts
+                            if( gee > 0u ){ enginforce *= -1;}
+                            vx += dirOfUfoForce.x * enginforce;
+                            vy += dirOfUfoForce.y * enginforce;
+                            vz += dirOfUfoForce.z * enginforce; 
+                            // Reorient dem inda correct way mahn
+                            // front face (push forward along UFO’s facing)
+                            if (tutu == interpredFront){//6u) {
+                                vx += dirOfUfoForce.x * rotation_engine;
+                                vy += dirOfUfoForce.y * rotation_engine;
+                                vz += dirOfUfoForce.z * rotation_engine;
+                            } 
+                            // back face (push backward / pull toward UFO’s rear)
+                            if (tutu == interpetedBack){//7u) {
+                                vx -= dirOfUfoForce.x * rotation_engine;
+                                vy -= dirOfUfoForce.y * rotation_engine;
+                                vz -= dirOfUfoForce.z * rotation_engine;
+                            }
+
+                        }
+                        // STRAFE RIGHT: use cross(forward, up) or cross(up, forward)
+                        let up = vec3<f32>(0.0, 1.0, 0.0);
+                        let right = normalize(cross(up, dirOfUfoForce));
+
+                        if (esh > 0u || eff > 0u) {
+                            var enginforce = er_forward_engine;
+                            if( eff > 0u ){ enginforce *= -1;}
+                            vx += right.x * -enginforce;
+                            vy += right.y * -enginforce;
+                            vz += right.z * -enginforce;
+                        }
+                        
+                        // ascend / descend
+                        if (spac > 0u || shft > 0u) {
+                            var vertForce: f32 = er_forward_engine;
+                            if (shft > 0u) {     // Shift is go down
+                                vertForce *= -1.0;
+                            }
+                            vy += vertForce;
+                        }
+
+                         
+
+                    }
                         
 
                     // vx += adeerr.x;
                     // vy += adeerr.y;
                     // vz += adeerr.z;
                 }
+
+
+                // Magic PULL logic from hand to hihglihgted entit
+                if(  targeted_ent_id > 0u ){  // the center part  //tutu == 12u &&
+                    // the selected one is the main guy    this center part is the thing thats being targeted
+                    if( targetingid > 0u && helprind == targeted_ent_id-1u ){
+                        
+                        // And lasso is currently pulling
+                        if( selectedtool == 0u && eeekey == 1u){
+
+                            var mainplyx = particles[ startOfEnts + ((targetingid-1u)*partSize) + 1u + grabOffset ];//GETTING THE XYZ OF THE ORIENT PRTICLE FOR U
+                            var mainplyy = particles[ startOfEnts + ((targetingid-1u)*partSize) + 2u + grabOffset ];
+                            var mainplyz = particles[ startOfEnts + ((targetingid-1u)*partSize) + 3u + grabOffset ];
+
+                            var magicpulldir = you - vec3<f32>( mainplyx, mainplyy, mainplyz );
+                            var varpullr: f32 = length( magicpulldir );
+                            var distemtotla = varpullr;
+
+                            varpullr = varpullr / (bucket_pacing*22f);
+ 
+                            varpullr = min( 1f, varpullr*varpullr );    // limit to max
+                            // var revrser: bool = false;
+                            // if( varpullr < 0.01f){ revrser = true;}
+                            varpullr = max( 0.22f, varpullr);            // atleast a bit
+
+                            varpullr *= 0.037f;
+                            // if( revrser ){
+                            //     varpullr *= -1;
+                            // }
+
+                            if( distemtotla <  bucket_pacing*0.88f){
+                                varpullr *= -0.45f;
+
+                                // somehow at this point trigger hearts?!
+
+
+                            }
+
+                            //varpullr = min( 0.035f, ();
+
+                            magicpulldir = normalize( magicpulldir );
+
+                            vx -= magicpulldir.x * varpullr;
+                            vy -= magicpulldir.y * varpullr;
+                            vz -= magicpulldir.z * varpullr;
+
+                            
+                            //vy += 0.06;
+                        }
+
+                    }
+
+                }
+
+                // Pull Up value ORBITAL bombardment from afair
+                if( behaviour_type == 5u ){
+                    if( y < bucket_pacing * 8f ){
+                        vy += 0.012f*(bucket_pacing*8f - y);
+                    }
+                }
+
 
             }//confirmed a teal ind was recorded 
 
@@ -2525,6 +3353,50 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
                 particles[ startOfCpuScratch + indtolook + 6u ] = straightAheadDir.y;
                 particles[ startOfCpuScratch + indtolook + 7u ] = straightAheadDir.z;
             }
+
+            // Look for the target
+            // DONUT DELETE < - For UPDATING AI TARGETTING SYETYMEM
+            
+            //hub_ent_role = u32( particles[ startOfEnts + (mm3*partSize) + 13u + grabOffset ] );//GETTING THE META 7 of the teal particle
+            //                                                                                      (WHICH IS THE ENTITY_ROLE)
+            
+                // NOTE  meta7u   is the hub_ent_role because this is a TEAl aprticle 
+            behaviour_type = u32( particles[ dbStartInd + rolesStartInd + (meta7u*rolesSize) + 10u ] );
+            max_sight_range = particles[ dbStartInd + rolesStartInd + (meta7u*rolesSize) + 11u ];
+            wants_entity_role = particles[ dbStartInd + rolesStartInd + (meta7u*rolesSize) + 17u ];
+
+            //vy += wants_entity_role;//0.16f;
+            if( wants_entity_role > -1f ){
+                //vy += 0.16f;
+            }
+
+            totalTealParSize = 0u;
+            var ttbc: u32 = 0u;// teal target behaviour check
+            loop {
+                if ttbc >= totalTealParSize { break; }  // go through teal and check i guess
+                if wants_entity_role < 0f { break; }    // if not lookin for a nu guy
+                // teal to check
+                var tealtc: u32 = u32( particles[ dbStartInd + listOfTealsStart + ttbc ] );
+                // Get the meta 7 of this teal particle (the role)
+                var teals_ent_role = u32( particles[ startOfEnts + (tealtc*partSize) + 13u + grabOffset ] );
+                you.x = particles[ startOfEnts + (tealtc*partSize) + 1u + grabOffset ];//GETTING THE XYZ OF THE ORIENT PRTICLE (FRONT) FOR U
+                you.y = particles[ startOfEnts + (tealtc*partSize) + 2u + grabOffset ];
+                you.z = particles[ startOfEnts + (tealtc*partSize) + 3u + grabOffset ];
+
+                if( u32(wants_entity_role) == teals_ent_role ){
+                    //vy += 0.1f;
+                }
+
+                var dstToTeal = distance( me, you );
+                if( dstToTeal < max_sight_range ){
+                    if( u32(wants_entity_role) == teals_ent_role ){
+                        //vy += 0.1f;
+                    }
+                }
+
+                ttbc = ttbc + 1u;
+            }
+
         }
 
         // Dormant particle
@@ -2654,44 +3526,127 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
                                 // EVENT___  forward particle push press
                                 if( tee > 0u ){                 // 'T' is being pressed
                                     if( m8u == 0u ){            // Is the first reserved slot section
-                                        //Finally 
-                                        if( 0u == ((id + step) % sizeOfPartReservation) ){
-                                            t = destinationParticle;
-                                            metaseven = 0f; // set the counter to 0 i guess
-                                            //metaeight = 0f; // dont reset the reserve group index
+
+                                        
+                                        // This is the Alaskan Bull worm scenario
+                                            // THIS is for the WERM worm
+                                        if( startingnumber == 1f ){
+                                            if( 0u == ((id + step) % (sizeOfPartReservation)) ){
+                                                t = destinationParticle;
+                                                metaseven = 0f; // set the counter to 0 i guess
+                                                //metaeight = 0f; // dont reset the reserve group index
+                                                var dirtmag: f32 = x*0.762 + y*0.433f + z*0.7921 + sftep + ifd;
+
+                                                dirtmag = EZ_RAND2ER( dirtmag );
+                                                metafour =  139f + floor(dirtmag*21f);
+                                                dirtmag = EZ_RAND2ER(metafour + dirtmag+sftep*0.777);
+                                                metafive = 69f + floor(dirtmag*11f);
+                                                dirtmag = EZ_RAND2ER(metafive + dirtmag+sftep*0.9177);
+                                                metasix = 19f + floor(dirtmag*11f);
+
+                                                // metafour = 139f;
+                                                // metafive = 69f;
+                                                // metasix = 19f;
+
+                                                
+                                                dirtmag = EZ_RAND2ER(dirtmag+sftep*0.81912 + y);
+                                                vy = dirtmag*0.05f;
+                                                dirtmag = EZ_RAND2ER(dirtmag+sftep*0.7912 + vy);
+                                                vx = (dirtmag-0.5f)*0.02f;
+                                                dirtmag = EZ_RAND2ER(dirtmag+sftep*0.111 + vx);
+                                                vz = (dirtmag-0.5f)*0.02f;
+                                            } 
                                         }
+                                        // For other kinds of scenarios use the normal 
+                                        else{
+                                            //Finally  But this is just one
+                                            if( 0u == ((id + step/3u) % sizeOfPartReservation) ){
+                                                t = destinationParticle;
+                                                metaseven = 0f; // set the counter to 0 i guess
+                                                //metaeight = 0f; // dont reset the reserve group index
+                                            }
+                                        }
+                                        
                                     }
                                 }
 
                                 // EVENT___  is there a target being highlighted
                                 if( targetingid > 0u && targeted_ent_id > 0u ){
-                                    if( m8u == 1u ){            // Is the second reserved slot section
-                                        t = 18f;                // set to marker deco particle
-                                        metaseven = 0f;         // set the counter to 0
-                                        //metaeight = 0f;       // NO keep it to this reserved particel group index
-                                    }
+                                    // if( m8u == 1u ){            // Is the second reserved slot section
+                                    //     t = 18f;                // set to marker deco particle
+                                    //     metaseven = 0f;         // set the counter to 0
+                                    //     //metaeight = 0f;       // NO keep it to this reserved particel group index
+                                    // }
                                 }
 
                                 // EVENT___ missile firing
                                 if( targetingid > 0u && targeted_ent_id > 0u ){
-                                    if( m8u == 2u && eEvent == 1u ){   // one time event
+                                    if( selectedtool == 0u ){   // lasso 
+                                    
+                                        if( m8u == 1u && eeekey == 1u ){   // constant stream of power
 
-                                        // If the missile is locekd and loaed
-                                        // If the exact missile 
-                                        if( id == partResStartInd && u32(destinationParticle) == 19u ){
-                                            
-                                            t = destinationParticle;   // experimental set the t19 to da thing
-                                            metaseven = 0f;
+                                            if( 0u == ((id + step/3u) % sizeOfPartReservation) ){
+                                                t = destinationParticle;
+                                                metaseven = 0f; // set the counter to 0 i guess
+                                                //metaeight = 0f; // dont reset the reserve group index
+                                                // magic cooour
+                                                var magcol: f32 = EZ_RAND2ER(x*0.762 + y*33f + z*0.9921 + ifd*0.091782  );
+                                                metafour =  magcol*250f;
+                                                magcol = EZ_RAND2ER(metafour + magcol+sftep*0.777);
+                                                metafive = (metafour + 100f + magcol*150f) % 255f;;
+                                                magcol = EZ_RAND2ER(magcol+sftep*0.9177);
+                                                metasix = (metafive + 150f + 100f*magcol)%255f;
 
-                                            vx = 0f;    // TODO set this to the originator vx,vy,vz
-                                            vy = 0f;
-                                            vz = 0f;
+                                                
+ 
+                                                magcol = EZ_RAND2ER(magcol+sftep*0.81912 + y);
+                                                vy = magcol*0.02f;
+                                                magcol = EZ_RAND2ER(magcol+sftep*0.7912 + vy);
+                                                vx = (magcol-0.5f)*0.02f;
+                                                magcol = EZ_RAND2ER(magcol+sftep*0.111 + vx);
+                                                vz = (magcol-0.5f)*0.02f;
 
-                                            metafour = f32(targeted_ent_id);//+1'd already
+                                                // Scatter the parts en route to the target
+                                                var pulltargx = particles[ startOfEnts + ((targeted_ent_id-1u)*partSize) + 1u + grabOffset ];//GETTING THE XYZ OF THE ORIENT PRTICLE FOR U
+                                                var pulltargy = particles[ startOfEnts + ((targeted_ent_id-1u)*partSize) + 2u + grabOffset ];
+                                                var pulltargz = particles[ startOfEnts + ((targeted_ent_id-1u)*partSize) + 3u + grabOffset ];
+                                                
+                                                var pathofpull = you - vec3<f32>( pulltargx, pulltargy, pulltargz );
+                                                var disttohand = length(pathofpull);
+                                                pathofpull = normalize( pathofpull );
 
-                                            metafive = 0f;// radius of explosion keep it 0 to start
+                                                magcol = EZ_RAND2ER(magcol+sftep*0.9918 + vz);
+                                                x = pulltargx+pathofpull.x*magcol*disttohand;  // Set randomly on the path to the hand
+                                                y = pulltargy+pathofpull.y*magcol*disttohand;
+                                                z = pulltargz+pathofpull.z*magcol*disttohand;
 
-                                            metasix = 1f;// turning on, or 'arming' the missle (this makes it produce smoke now)
+                                                vx += pathofpull.x * 0.1f;
+                                                vy += pathofpull.y * 0.1f;
+                                                vz += pathofpull.z * 0.1f;
+                                            }
+
+                                        }
+
+                                    }
+                                    else if( selectedtool == 1u ){// missile
+                                        if( m8u == 2u && eEvent == 1u ){   // one time event 
+                                            // If the missile is locekd and loaed
+                                            // If the exact missile 
+                                            if( id == partResStartInd && u32(destinationParticle) == 19u ){
+                                                
+                                                t = destinationParticle;   // experimental set the t19 to da thing
+                                                metaseven = 0f;
+
+                                                vx = 0f;    // TODO set this to the originator vx,vy,vz
+                                                vy = 0f;
+                                                vz = 0f;
+
+                                                metafour = f32(targeted_ent_id);//+1'd already
+
+                                                metafive = 0f;// radius of explosion keep it 0 to start
+
+                                                metasix = 1f;// turning on, or 'arming' the missle (this makes it produce smoke now)
+                                            }
                                         }
                                     }
                                 }
@@ -2704,17 +3659,18 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
                                 if( m8u == 2u ){//primaryParticleType == 19u ){
                                     if( isMissileArmed == 1u ){ // is the msisiel armed
                                         //if( 0u == ((id + step) % sizeOfPartReservation) ){// we are looking at the smoke particle
-                                        if( 0u==((id+primaryCounter+step*21)%(sizeOfPartReservation))  ){
+                                        if( 0u==((id+primaryCounter+step/3u)%(sizeOfPartReservation))  ){
                                             x = missileXCoor;
                                             y = missileYCoor;
                                             z = missileZCoor;
 
+
                                             var tte: f32 = EZ_RAND2ER(x*x*0.762 + y*y*33f + z*z*0.9921   );
-                                            vx = 0.006f * sin( tte );
+                                            vx = 0.007f * sin( tte );
                                             tte = EZ_RAND2ER( tte );
-                                            vy = 0.006f * cos(tte) * sin( tte );
+                                            vy = 0.007f * cos(tte) * sin( tte );
                                             tte = EZ_RAND2ER( tte );
-                                            vz = 0.006f * sin( tte * 13f + tte*tte );
+                                            vz = 0.007f * sin( tte * 13f + tte*tte );
 
                                             t = metaseven;//destinationParticle; // probably 21
                                             metaseven = 0f; // set the counter to 0 i guess
@@ -2730,6 +3686,72 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
 
                             // Not the main char
                             else{
+                                // First reserved particle section (always reserved for like particles that get emitted )
+                                if( m8u == 0u ){
+
+
+                                    // Creation of the bubble particle 
+                                    if( destinationParticle == 22f ){
+                                        if( 0u == ((id + step/6u) % sizeOfPartReservation) ){
+                                            y += 0.4f;  // SLightly push up these bubles
+                                            t = destinationParticle;
+                                            metaseven = 0f; // set the counter to 0 i guess
+                                            //metaeight = 0f; // dont reset the reserve group index
+                                        }
+                                    }
+
+                                    // Water particle is here now
+                                    else if( destinationParticle == 15f ){
+                                        if( 0u == ((id + step/6u) % sizeOfPartReservation) ){
+                                            t = destinationParticle;
+                                            metaseven = 0f; // set the counter to 0 i guess
+                                            //metaeight = 0f; // dont reset the reserve group index
+                                        }
+                                    }
+
+                                }
+
+                                // Second reserved particle section (weapns/ attack/ action)
+                                else if( m8u == 1u ){
+
+                                    // Orbiter bombardment (the tea)
+                                    // AUTO firing, AI controlled ,         LASER mode
+                                    if( behaviour_type == 5u && destinationParticle == 20f && metatwo == 0f){
+
+                                        if( 650u == ((id + step) % 1500u) ){
+
+                                            var randoVictm: f32 = EZ_BETTER_RAND(  f32(tealent)*0.3333f + 0.6667*f32((tealent*33u + step)%1900u)  );
+                                            var randoCollBallTarget: u32 = u32( f32(maxbadents) * randoVictm );
+                                            randoCollBallTarget =  u32(particles[ dbStartInd + maxxedGoodEnts + randoCollBallTarget ]) - 1u;
+
+                                            t = destinationParticle;
+                                            metaseven = 0f; // set the counter to 0 i guess
+
+                                            metatwo = 1f;// ACTIVATE Missile
+
+
+                                            metafour = particles[ startOfEnts + (randoCollBallTarget*partSize) + 1u + grabOffset ];//GETTING THE XYZ OF THE ORIENT PRTICLE FOR U
+                                            metafive = particles[ startOfEnts + (randoCollBallTarget*partSize) + 2u + grabOffset ];
+                                            metasix = particles[ startOfEnts + (randoCollBallTarget*partSize) + 3u + grabOffset ];
+
+
+                                        }
+
+
+
+                                    }
+
+                                    // behaviour_type 
+
+
+                                }
+
+
+                                // Third reserved particle section for displaying damage
+                                else if( m8u == 2u ){
+
+                                }
+
 
                                 // TODO: figure out how to trigger this transofmration
 
@@ -2737,13 +3759,12 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
 
                                 // Continuous push out of particles 
                                 // ( this is for the cloud i guess?)
-                                // ^^ JUST LCOUD RIGHT NOW
-                                if( 0u == ((id + step) % sizeOfPartReservation) ){
-                                    t = destinationParticle;
-                                    metaseven = 0f; // set the counter to 0 i guess
-                                    //metaeight = 0f; // dont reset the reserve group index
-
-                                }
+                                // ^^ JUST CLOUD RIGHT NOW - UPDATE<-  this changed though
+                                // if( 0u == ((id + step) % sizeOfPartReservation) ){
+                                //     t = destinationParticle;
+                                //     metaseven = 0f; // set the counter to 0 i guess
+                                //     //metaeight = 0f; // dont reset the reserve group index 
+                                // }
                             }
 
 
@@ -2775,14 +3796,14 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
             }
 
 
-            // Water particle    // Gold paritlce waiting
-            else if( tutu == 15u || tutu == 16u ){
+            // Water particle    // Gold paritlce waiting   // bubble feesh particle
+            else if( tutu == 15u || tutu == 16u || tutu == 22u ){
                 metaseven = metaseven + 1f;
                 if( metaseven > da_counter_max){
                     metaseven = da_counter_max;
                 }
                 
-                var colliding_with: f32 = 2f;//0f;// TODO : it's hard coded to collide w good entities rn rn
+                var colliding_with: f32 = 2f;//0f;// TODO : it's hard coded to collide w all entities rn...?
                 var entsToCountVal: u32 = 0u;
                 var entsWhereToStart: u32 = 0u;
                 
@@ -2839,22 +3860,27 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
                         radius *= 3.5f;
                     }
 
+                    var partpushf: f32 = 12f;   // Particle push force awa y from the stuff you're hitting up against
+                    if(tutu == 22u){            // if this particle 
+                        partpushf = 3f;
+                    }
+
                     if( disncet < (radius) ){
                         disncet = disncet - (radius);
                         var pbackdir = normalize( me - locationOfEnt );
 
                         if( disncet < 0 ){
-                            pbackdir *= (std_spring_k_val*12f) * abs(disncet);
+                            pbackdir *= (std_spring_k_val*partpushf) * abs(disncet);
                         }
                         else{ 
-                            pbackdir *= -(std_spring_k_val*12f) * abs(disncet);
+                            pbackdir *= -(std_spring_k_val*partpushf) * abs(disncet);
                         }
 
                         // SFX tap tap TODO commented out fornow becuase not sure how to distinguish between the main char and a random fish
                         //particles[ startOfSFXCpuScratch + (0u*sfxSlotSize) + sfxOffset ] = 1;
 
                         if( tutu == 16u ){
-                            t = 17f;    // resting to gold 
+                            t = 17f;    // resting to gold
                             vy += 0.08f;
                         }
 
@@ -2862,7 +3888,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
                         // if( disncet > 2.4*stabledist ){
                         //     thderr *= 0f;
                         //     t = 4f;     // change to dead spring
-                        // } 
+                        // }
 
                         //t = 4;
                         vx += pbackdir.x;
@@ -2880,21 +3906,25 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
 
 
 
-                
+                var gftp: f32 = sgrav;// gravity for this particle
 
-                // COLLIDE WITH GOOD GUYS
-                var functionalGround: f32 = max( thground_here, 0 );
+                if(tutu == 22u){
+                    gftp = bgrav;
+                }
+
+                // get the ground i guess....
+                var functionalGround: f32 = thground_here;//max( thground_here, 0 );
                 
                 if( y < functionalGround ){// hard collide w the absolute ground
                     // LET THE catch all at the end of the thing handle this case
 
-                    //vy = abs(vy)*0.9f;//sgrav;
+                    //vy = abs(vy)*0.9f;//gftp;
                     y = functionalGround;
                     //vy = 0;
                 }
-                else if(y < functionalGround + (bucket_pacing*0.35f)){ // just at stasis i guess
-                    //vy -= sgrav*0.1f;
-                    vy += 0.0026f + 0.00065f * sin(  (x + f32(id) * 1227f) + sftep*0.00034f + (y * 299f) + ((f32(id)%55)-27f)*288f  );
+                else if(y < functionalGround + (bucket_pacing*0.55f)){ // just at stasis i guess
+                    //vy -= gftp*0.1f;
+                    vy += 0.0026f + 0.00065f * sin(  (x + ifd * 1227f) + sftep*0.00034f + (y * 299f) + ((ifd%55)-27f)*288f  );
                     
                     vx *= 0.98f;
                     vy *= 0.98f;
@@ -2907,14 +3937,38 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
                     vy *= 0.987f;
                     vz *= 0.987f;
 
-                    vy -= sgrav;
+                    vy -= gftp;
                 }
+
 
 
                 // MUD? retract to spiral 
                 if( (id>=mudStart) && id<(mudStart+mudSize) ){
-                    var goodmud = calculate_spiral_coordinates( id-mudStart, 0.06f );
+                    var goodmud = calculate_spiral_coordinates( id-mudStart, 0.13f );
+                    goodmud.x += middleSpawnX;
+                    goodmud.y += middleSpawnY;
+
+                    // Add that random spicey
+                    var roffx1: f32 = EZ_RAND2ER( goodmud.x*0.732f + goodmud.y*0.6783f );
+                    goodmud.x += roffx1;
+                    roffx1 = EZ_RAND2ER( roffx1*0.81918f + goodmud.x*10.921f + goodmud.y*3.9333f );
+                    goodmud.y += roffx1;
+
+                    goodmud.x -= x;
+                    goodmud.y -= z;
+                    // Normalize the direction vector (goodmud.x, goodmud.y) to ensure consistent speed
+                    let len = sqrt(goodmud.x * goodmud.x + goodmud.y * goodmud.y);
+                    var dir_x = 0.0f;
+                    var dir_y = 0.0f;
+                    if (len > 0.0f) {
+                        dir_x = goodmud.x / len;
+                        dir_y = goodmud.y / len;
+                    }
                     
+                    // Apply the direction to vx and vz (assuming xz plane movement)
+                    let speed = 0.00008f; // Adjust this to control the strength of the push
+                    vx += dir_x * speed;
+                    vz += dir_y * speed; // Use dir_y for vz to map 2D y to 3D z
                 }
 
                 x += vx;
@@ -2923,9 +3977,9 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
 
 
                 // Water expiration ? return to cloud
-                if( tutu == 15u ){
+                if( tutu == 15u || tutu == 22u ){
 
-                    if( metaseven > 1150f ){    // Max time so convert back to its
+                    if( metaseven > 950f ){    // Max time so convert back to its
 
                         // There's a hub ent to return to
                         if( meta3u > 0u ){
@@ -2933,7 +3987,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
                             y = particles[ startOfEnts + ((meta3u-1u)*partSize) + 2u + grabOffset ];
                             z = particles[ startOfEnts + ((meta3u-1u)*partSize) + 3u + grabOffset ];
                             t = 14f;
-                            metaseven = 15f;//<- convert back to water
+                            metaseven = f32(tutu);//<- convert back to water or the floating particles
                             //metaeight = 0f;//<-wasnt even used i dont think
                         }
                     }
@@ -3013,47 +4067,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
                                     // if( m8u == 0u ){} the first reserved particle slot
                                     if( m8u == 1u ){            // Is the second reserved slot section
 
-                                        x = particles[ startOfEnts + ((targeted_ent_id-1u)*partSize) + 1u + grabOffset ];
-                                        y = particles[ startOfEnts + ((targeted_ent_id-1u)*partSize) + 2u + grabOffset ];
-                                        z = particles[ startOfEnts + ((targeted_ent_id-1u)*partSize) + 3u + grabOffset ];
-
-                                        var spherepoint = (id % sizeOfPartReservation);
-                                        var spoint = sphere_point( spherepoint, sizeOfPartReservation, sftep );
-
-                                        x += spoint.x * (2.1f + (sin(sftep*0.08f)*0.12f) );
-                                        y += spoint.y * (2.1f + (sin(sftep*0.08f)*0.12f) );
-                                        z += spoint.z * (2.1f + (sin(sftep*0.08f)*0.12f) );
-
-                                        // Green or red color tint on the targeting marker
-                                        var rollee: u32 = u32( particles[ startOfEnts + ((targeted_ent_id-1u)*partSize) + 13u + grabOffset ] );
-
-                                        var collide_withh: u32 = u32( particles[ dbStartInd + rolesStartInd + (rollee*rolesSize) + 3u ] ); 
-                                            // Val3 of the role is the 'collide_with' variable , 0 = collide with goods, 1 = collide iwth bads, 2 = collide with both
-                                        // The meta7 of the targeted ind should always be a t13 so this is the DB ind
-                                        // Get the collide profile of the t13
-
-                                        // DONnUT MODIFY THIS < - LINE CHANGe HOW THe TARGETER RETICLE REACTS WITH TARGES
-
-                                        if( collide_withh == 0u ){ // collides with good ents
-                                            metafour = 250f;
-                                            metafive = 0f;
-                                            metasix = 0f;
-                                        }
-                                        else if( collide_withh == 1u ){ // collides with bad ents
-                                            metafour = 0f;
-                                            metafive = 250f;
-                                            metasix = 0f;
-                                        }
-                                        else if( collide_withh == 2u ){ // collides with both
-                                            metafour = 120f;
-                                            metafive = 150f;
-                                            metasix = 60f;
-                                        }
-                                        else{ // should never be this
-                                            metafour = 255f;
-                                            metafive = 255f;
-                                            metasix = 255f;
-                                        }
+                                        
                                         
                                     }
                                 }
@@ -3225,6 +4239,37 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
             }   // END of t=19 missile
 
 
+            // LASER
+            else if( tutu == 20u ){
+
+                metaseven = metaseven + 1f;
+                if( metaseven > da_counter_max){
+                    metaseven = da_counter_max;
+                }
+
+
+                vx *= 0.994f;
+                vy *= 0.994f;
+                vz *= 0.994f;
+
+                vy += sgrav*0.5f;
+                
+                x += vx;
+                y += vy;
+                z += vz;
+
+                if( metaseven > 3){// reset to 14 i guess?
+                    t = 14f;
+                    metaseven = 20f;    // Return back to its dormant i gues
+
+                    metatwo = 0f;// set to disarmed again
+                }
+
+
+
+            }
+
+
             // Air drifter paarticle
             else if( tutu == 21u ){
 
@@ -3268,23 +4313,26 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
             y += vy;
             z += vz;
 
-            if( y < thground_here ){
-                y = thground_here;
-                vy = 0;
-            }
+            // if( y < thground_here ){
+            //     y = thground_here;
+            //     vy = 0;
+            // }
 
 
         }
 
-
+        if( y < thground_here ){
+            y = thground_here;
+            vy = 0;
+        }
 
 
 
         // No matter what, repel the bottom-most ground
-        if( y < 0 ){
-            y = 0;
-            vy = 0;
-        }
+        // if( y < 0 ){
+        //     y = 0;
+        //     vy = 0;
+        // }
         
         // Extra repel
         // if( y < thground_here ){
@@ -3542,9 +4590,14 @@ fn vs_main(
 ) -> ParticleVSOut {
     
     var ind_main_char: u32 = ${FINAL_POINT_DATA.KEY_PROTAGONIST}u;
-    var mainChar: bool = ind_main_char == instanceIndex; 
+    var mainChar: bool = ind_main_char == instanceIndex;
+    
+    var partSize: u32 = ${FINAL_POINT_DATA.oneParticleSize}u;
+    var startOfEnts: u32 = ${FINAL_POINT_DATA.START_PARTICLES}u;
+    var rolesSize: u32 = ${FINAL_POINT_DATA.ENT_ROLES_SIZE}u;
+    var rolesStartInd: u32 = ${FINAL_POINT_DATA.START_OF_ENT_ROLES_IN_DB}u;
 
-    var i = instanceIndex * ${FINAL_POINT_DATA.oneParticleSize}u;
+    var i = instanceIndex * partSize;
     i += ${FINAL_POINT_DATA.START_PARTICLES}u;
 
     var step: u32 = userInput[6];
@@ -3570,7 +4623,7 @@ fn vs_main(
     var x = particles[i + 1 + ofstr];
     var y = particles[i + 2 + ofstr];
     var z = particles[i + 3 + ofstr];
-    let met3 = particles[i + 9 + ofstr];  
+    let met3 = u32(particles[i + 9 + ofstr]);
     let met4 = particles[i + 10 + ofstr];
     let met5 = particles[i + 11 + ofstr];
     let met6 = particles[i + 12 + ofstr];
@@ -3587,6 +4640,20 @@ fn vs_main(
 
     //show nothing
     var oritnerdebugere: u32 = 0;
+
+    var voxel_sm: f32 = 1f;  // size modifer if the voxel thing to use
+
+    // Maybe need to modify the size of voxel for diss guy
+    if( t != 13u && met3 > 0u ){
+        var mm3 = met3 - 1u;
+        
+        var hub_ent_role: u32 = u32( particles[ startOfEnts + (mm3*partSize) + 13u + grabOffset ] );//GETTING THE META 7 of the teal particle
+
+        var voxel_sizer: f32 = particles[ dbStartInd + rolesStartInd + (hub_ent_role*rolesSize) + 14u ]; // Get the voxel size mmodier
+
+        voxel_sm *= voxel_sizer;
+
+    }
  
     
 
@@ -3607,7 +4674,24 @@ fn vs_main(
         scaler = 0.2f;
     }
     else if( t == 1u ){
-        scaler = 0.35;
+        scaler = 0.33;
+
+        // Bucket particles:
+        // Boost the currently seelcted entiy highlugher, but NOT the directoinal looker
+        if( instanceIndex > 299 && instanceIndex < 325 ){//instanceIndex < 350 ){
+            scaler = 0.42;
+        }
+        // God rays light particles
+        // (axisVal  [8, 19])
+        // so 12 x 50 = 1100 for sun particles
+        else if( instanceIndex > 399 && instanceIndex < 1000 ){
+
+            scaler = 0.11;  // smol smol light particles
+
+            
+
+        }
+
     }
 
     // Std thing from voxel engine
@@ -3639,6 +4723,9 @@ fn vs_main(
     else if( t == 21u ){
         scaler += met7*0.008f;
     }
+
+
+    scaler *= voxel_sm;
  
     var corner = corners[vertexIndex] * scaler;
     // if( userInput[6] > 300 ){
@@ -4048,8 +5135,11 @@ fn fs_plane_main(input: PlaneVSOut) -> @location(0) vec4<f32> {
 
 // For the plane texture
 // Updated function
-async function createPlaneTextureAndBindGroup(device) {
-    const imgEl = document.getElementById('bgText1');
+async function createPlaneTextureAndBindGroup(device, customScenarioObject) {
+
+
+
+    const imgEl = document.getElementById(customScenarioObject?customScenarioObject.ground_img_el_id: 'bgText2');
     if (!imgEl) {
         console.warn("No <img id='bgText1'> found!");
         return;
@@ -4085,7 +5175,7 @@ async function createPlaneTextureAndBindGroup(device) {
     });
 }
 
-async function main() {
+async function main( customScenarioObject ) {
     await initWebGPU();
     setupInputHandlers();
 
@@ -4114,13 +5204,13 @@ async function main() {
     await createRenderPipelines(device);
 
     // Load plane texture
-    await createPlaneTextureAndBindGroup(device);
+    await createPlaneTextureAndBindGroup(device, customScenarioObject);
 
     depthTexture = createDepthTexture(device, canvas.width, canvas.height);
 
-    var FOG_R = 0.28;
-    var FOG_G = 0.32;
-    var FOG_B = 0.89;
+    var FOG_R = customScenarioObject ? customScenarioObject.fog_r : 0.29;
+    var FOG_G = customScenarioObject ? customScenarioObject.fog_g : 0.39;
+    var FOG_B = customScenarioObject ? customScenarioObject.fog_b : 0.85;
 
     const renderPassDesc = {
         colorAttachments: [
@@ -4186,7 +5276,7 @@ async function main() {
                     // Update closest entity if this distance is shorter
                     if(distance < shortestDistance) {
                         shortestDistance = distance;
-                        CLOSEST_ENT_ID = 1 + ALL_READABLE_ENTS[v].i; // Store the 'i' value of closest entity
+                        //CLOSEST_ENT_ID = 1 + ALL_READABLE_ENTS[v].i; // Store the 'i' value of closest entity
                     }
                 }
             }
@@ -4307,6 +5397,8 @@ async function main() {
 
         userInputArray[18] = keys.u ? 1:0; 
         userInputArray[19] = 0;//keys.enter ? 1:0; // closer up aimer
+
+
         if( proneCameraType === 0){// normal orbit follow
             userInputArray[19] = 0;
         }
@@ -4316,11 +5408,40 @@ async function main() {
         else if(proneCameraType === 2 ){// view fish tank mode 
             userInputArray[19] = 2;
         }
+
         userInputArray[20] = DEBUG_VISUALS ? 1:0; // toggle debug viewer
+        userInputArray[21] = CURR_TOOL_SELECTED;// what tool
+
+        userInputArray[22] = CLOSEST_ENT_HOVERED_OVER_ID;// last entity that you simply hoverin over
+
+        // Cam position for relative velocity boosting
+        let ccx = Math.floor( camera.position[0] / FINAL_POINT_DATA.BUCKET_SPACING );
+        ccx = ccx < 0 ? Math.abs(ccx) + 10000 : ccx;
+        let ccy = Math.floor( camera.position[1] / FINAL_POINT_DATA.BUCKET_SPACING );
+        ccy = ccy < 0 ? Math.abs(ccy) + 10000 : ccy;
+        let ccz = Math.floor( camera.position[2] / FINAL_POINT_DATA.BUCKET_SPACING );
+        ccz = ccz < 0 ? Math.abs(ccz) + 10000 : ccz;
 
 
+        userInputArray[23] = ccx;
+        userInputArray[24] = ccy;
+        userInputArray[25] = ccz;
 
-        //console.log(userInputArray[13], userInputArray[14])
+        // Cam positionminutiiao
+        // userInputArray[26] = 
+        // userInputArray[27] =
+        // userInputArray[28] =
+
+        userInputArray[26] = INTELLIGENTLY_CONTROLLED.length;
+        userInputArray[27] = THIS_CLIENT_CONTROL_IND;//ind ^ of the intellginetly contorlled guys
+        userInputArray[28] = 0;
+        userInputArray[29] = 0.05;//POWER of wave of ground
+
+        // Real player commands
+        for(let ko = 0;ko < INTELLIGENTLY_CONTROLLED.length;ko++){
+            userInputArray[30 + ko*2 + 0] = INTELLIGENTLY_CONTROLLED[ko].tealind;
+            userInputArray[30 + ko*2 + 1] = INTELLIGENTLY_CONTROLLED[ko].human?1:0;
+        }
 
 
         if( device)
@@ -4378,8 +5499,8 @@ async function main() {
         cameraDataArray[33] = FOG_G;
         cameraDataArray[34] = FOG_B;
         cameraDataArray[35] = 1.0;
-        cameraDataArray[36] = 31.0;   // near
-        cameraDataArray[37] = 55.0;   // far
+        cameraDataArray[36] = 160.0;   // near
+        cameraDataArray[37] = 166.0;   // far
     
         if(device)
         device.queue.writeBuffer(vpBuffer, 0, cameraDataArray);
@@ -4448,6 +5569,12 @@ async function main() {
                 isMapping = false;
             });
         }
+		//console.log(GAME_MODE, STEPCOUNT)
+
+		if( GAME_MODE !== 0 && STEPCOUNT === 9 ){
+			
+			lookForMainProtagonistAndSet();
+		}
 
         if( !pausedthisone ){
             STEPCOUNT++;
@@ -4462,10 +5589,33 @@ async function main() {
 
 const img = new Image();
 img.id = "bgText1"; // Match the expected ID
-img.src = bgsmolcave;
+img.src = FINAL_BACKGROUNDS.sponge2048roads;//bigspong//smolspong;;
+
+
 document.body.appendChild(img); // Add to DOM if needed
 img.classList.add("hidden"); // Match your original class 
 
 
-main()
+const imgmg2 = new Image();
+imgmg2.id = "bgText2"; // Match the expected ID
+imgmg2.src = FINAL_BACKGROUNDS.smolcave;//sponge2048roads;//bigspong//smolspong;;
+document.body.appendChild(imgmg2); // Add to DOM if needed
+imgmg2.classList.add("hidden"); // Match your original class 
+// Add ev
+
+const imgmg3 = new Image();
+imgmg3.id = "bgText3"; // Match the expected ID
+imgmg3.src = FINAL_BACKGROUNDS.sponge2048roadsv2;//sponge2048roads;//bigspong//smolspong;;
+document.body.appendChild(imgmg3); // Add to DOM if needed
+imgmg3.classList.add("hidden"); // Match your original class 
+
+
+const imgmg4 = new Image();
+imgmg4.id = "bgText4"; // Match the expected ID
+imgmg4.src = FINAL_BACKGROUNDS.forest_floor_albedo;//sponge2048roads;//bigspong//smolspong;;
+document.body.appendChild(imgmg4); // Add to DOM if needed
+imgmg4.classList.add("hidden"); // Match your original class 
+
+
+main();
 //main();
